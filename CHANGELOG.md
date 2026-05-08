@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+## [3.0.1] - 2026-05-08
+- Restored QuickLook previews and the default-opener behavior for .md files in Finder
+
 ## [3.0.0] - 2026-05-08
 - Clearly is now a focused, distraction-free markdown editor — vault index, chat, wiki, and CLI/MCP integrations have been removed
 - New hover-revealed bottom toolbar with a Copy menu, styled with Liquid Glass
