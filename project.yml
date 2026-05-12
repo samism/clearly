@@ -114,7 +114,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.sabotage.clearly
         PRODUCT_NAME: Clearly
-        MARKETING_VERSION: "1.4.0"
+        MARKETING_VERSION: "2.0.0"
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "5.9"
         TARGETED_DEVICE_FAMILY: "1,2"
@@ -204,7 +204,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.sabotage.clearly.preview
         PRODUCT_NAME: ClearlyPreview
-        MARKETING_VERSION: "1.4.0"
+        MARKETING_VERSION: "2.0.0"
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "5.9"
         TARGETED_DEVICE_FAMILY: "1,2"
@@ -230,7 +230,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.sabotage.clearly.thumbnail
         PRODUCT_NAME: ClearlyThumbnail
-        MARKETING_VERSION: "1.4.0"
+        MARKETING_VERSION: "2.0.0"
         CURRENT_PROJECT_VERSION: "1"
         SWIFT_VERSION: "5.9"
         TARGETED_DEVICE_FAMILY: "1,2"

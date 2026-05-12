@@ -4,6 +4,12 @@ iOS release notes. Mac release notes live in `CHANGELOG.md`.
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-05-12
+- Refocused as a clean, distraction-free markdown editor — the vault sidebar, full-text search, quick switcher, backlinks, outline, and tags surfaces have been removed in favor of the system document browser
+- Tapping a .md in Files.app now shows a rendered preview (math, mermaid, syntax highlighting) instead of raw text
+- Files icon view shows a real thumbnail with the document's first heading and body lines
+- Restored .md routing so opening from Mail, Safari, or any other app hands off to Clearly
+
 ## [1.4.0] - 2026-04-29
 - Find + Replace across the editor, with stale-highlight fix
 - Fold and unfold code blocks in Preview and Live Preview
