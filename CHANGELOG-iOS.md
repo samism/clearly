@@ -4,6 +4,11 @@ iOS release notes. Mac release notes live in `CHANGELOG.md`.
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-05-17
+- Open documents auto-reload when they're changed by another app
+- Wikilinks now render properly and no longer break Markdown tables
+- Dead-key composition (e.g. accented characters) no longer drops mid-typed input
+
 ## [2.0.0] - 2026-05-12
 - Refocused as a clean, distraction-free markdown editor — the vault sidebar, full-text search, quick switcher, backlinks, outline, and tags surfaces have been removed in favor of the system document browser
 - Tapping a .md in Files.app now shows a rendered preview (math, mermaid, syntax highlighting) instead of raw text
