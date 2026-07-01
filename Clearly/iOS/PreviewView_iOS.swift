@@ -53,8 +53,8 @@ struct PreviewView_iOS: UIViewRepresentable {
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
         webView.isOpaque = true
-        webView.backgroundColor = .systemBackground
-        webView.scrollView.backgroundColor = .systemBackground
+        webView.backgroundColor = Theme.backgroundColor
+        webView.scrollView.backgroundColor = Theme.backgroundColor
         webView.scrollView.alwaysBounceVertical = true
 
         context.coordinator.fileURL = fileURL

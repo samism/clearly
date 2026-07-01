@@ -75,7 +75,7 @@ struct FindOverlay_iOS: View {
             .padding(.vertical, 6)
             .background(
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.04))
+                    .fill(Theme.hoverColor(inDark: colorScheme == .dark))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
@@ -102,7 +102,7 @@ struct FindOverlay_iOS: View {
             }
             .buttonStyle(.plain)
             .font(.system(size: 14, weight: .medium))
-            .foregroundStyle(Theme.accentColorSwiftUI)
+            .foregroundStyle(Theme.accentForegroundColorSwiftUI)
         }
     }
 
@@ -128,7 +128,7 @@ struct FindOverlay_iOS: View {
             .padding(.vertical, 6)
             .background(
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.04))
+                    .fill(Theme.hoverColor(inDark: colorScheme == .dark))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
@@ -139,13 +139,13 @@ struct FindOverlay_iOS: View {
             Button("All") { findState.editorPerformReplaceAll?() }
                 .buttonStyle(.plain)
                 .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(findState.canReplaceAll ? Theme.accentColorSwiftUI : Color.secondary)
+                .foregroundStyle(findState.canReplaceAll ? Theme.accentForegroundColorSwiftUI : Color.secondary)
                 .disabled(!findState.canReplaceAll)
 
             Button("Replace") { findState.editorPerformReplace?() }
                 .buttonStyle(.plain)
                 .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(findState.canReplace ? Theme.accentColorSwiftUI : Color.secondary)
+                .foregroundStyle(findState.canReplace ? Theme.accentForegroundColorSwiftUI : Color.secondary)
                 .disabled(!findState.canReplace)
         }
     }
@@ -229,7 +229,7 @@ private struct FindOptionToggle_iOS: View {
         Button(action: { isOn.toggle() }) {
             Text(label)
                 .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                .foregroundStyle(isOn ? Theme.accentColorSwiftUI : Color.secondary)
+                .foregroundStyle(isOn ? Theme.accentForegroundColorSwiftUI : Color.secondary)
                 .frame(width: 22, height: 22)
                 .background(
                     RoundedRectangle(cornerRadius: 4)
