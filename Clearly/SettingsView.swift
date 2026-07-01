@@ -85,7 +85,7 @@ struct SettingsView: View {
             }
 
             Picker("Preview Font", selection: $previewFontFamily) {
-                Text("Helvetica Neue").tag("sanFrancisco")
+                Text("System").tag("sanFrancisco")
                 Text("New York").tag("newYork")
                 Text("JetBrains Mono").tag("sfMono")
             }

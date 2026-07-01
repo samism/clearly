@@ -41,11 +41,11 @@ struct JumpToLineBar: View {
             .padding(.vertical, 5)
             .background(
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.04))
+                    .fill(Theme.hoverColor(inDark: colorScheme == .dark))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
-                    .strokeBorder(Color.accentColor.opacity(isFieldFocused ? 0.4 : 0), lineWidth: 1)
+                    .strokeBorder(Theme.accentColorSwiftUI.opacity(isFieldFocused ? 0.4 : 0), lineWidth: 1)
                     .animation(Theme.Motion.hover, value: isFieldFocused)
             )
 
@@ -54,7 +54,7 @@ struct JumpToLineBar: View {
             }
             .buttonStyle(.plain)
             .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(Color.accentColor)
+            .foregroundStyle(Theme.accentForegroundColorSwiftUI)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 6)

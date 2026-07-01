@@ -37,8 +37,9 @@ struct PreviewView: NSViewRepresentable {
 
     private var bodyMaxWidthCSS: String {
         guard let contentWidthEm else { return "none" }
-        // Body padding is part of the box width, so add it back to match editor text width.
-        return "calc(\(Int(contentWidthEm))em + 128px)"
+        // Body padding (40px per side) is part of the box width, so add it back
+        // to match editor text width.
+        return "calc(\(Int(contentWidthEm))em + 80px)"
     }
 
     private var contentKey: String {
@@ -179,15 +180,15 @@ struct PreviewView: NSViewRepresentable {
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <style>\(PreviewCSS.css(fontSize: fontSize, fontFamily: fontFamily, bodyMaxWidth: bodyMaxWidthCSS))
-        mark.clearly-find { background-color: rgba(255, 230, 0, 0.4); border-radius: 2px; padding: 0 1px; }
-        mark.clearly-mode-highlight { background: rgba(255, 210, 50, 0.5); border-radius: 3px; padding: 0 1px; transition: background 1.5s ease; }
+        mark.clearly-find { background-color: rgba(255, 204, 0, 0.35); border-radius: 2px; padding: 0 1px; }
+        mark.clearly-mode-highlight { background: rgba(255, 214, 10, 0.45); border-radius: 3px; padding: 0 1px; transition: background 1.5s ease; }
         mark.clearly-mode-highlight.fade { background: transparent; }
-        mark.clearly-outline-flash { background-color: rgba(255, 245, 100, 0.95); color: inherit; border-radius: 3px; padding: 0 2px; box-shadow: 0 0 0 1px rgba(220, 180, 0, 0.5); transition: background-color 1.2s ease, box-shadow 1.2s ease; }
+        mark.clearly-outline-flash { background-color: rgba(255, 214, 10, 0.85); color: inherit; border-radius: 3px; padding: 0 2px; box-shadow: 0 0 0 1px rgba(153, 112, 0, 0.55); transition: background-color 1.2s ease, box-shadow 1.2s ease; }
         mark.clearly-outline-flash.fade { background-color: transparent; box-shadow: 0 0 0 1px transparent; }
-        mark.clearly-find.current { background-color: rgba(255, 165, 0, 0.6); }
+        mark.clearly-find.current { background-color: rgba(255, 204, 0, 0.62); }
         @media (prefers-color-scheme: dark) {
-            mark.clearly-find { background-color: rgba(180, 150, 0, 0.4); }
-            mark.clearly-find.current { background-color: rgba(200, 150, 0, 0.6); }
+            mark.clearly-find { background-color: rgba(255, 214, 10, 0.30); }
+            mark.clearly-find.current { background-color: rgba(255, 214, 10, 0.52); }
         }
         </style>
         </head>

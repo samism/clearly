@@ -17,7 +17,7 @@ struct OutlineView: View {
                 .padding(.bottom, 6)
 
             Rectangle()
-                .fill(Color.primary.opacity(colorScheme == .dark ? Theme.separatorOpacityDark : Theme.separatorOpacity))
+                .fill(Theme.separatorColor(inDark: colorScheme == .dark))
                 .frame(height: 1)
                 .padding(.horizontal, 12)
 
@@ -88,7 +88,7 @@ private struct HeadingRow: View {
         .background(
             RoundedRectangle(cornerRadius: 6)
                 .fill(isHovered
-                    ? Color.primary.opacity(colorScheme == .dark ? Theme.hoverOpacityDark - 0.03 : 0.05)
+                    ? Theme.hoverColor(inDark: colorScheme == .dark)
                     : Color.clear)
                 .padding(.horizontal, 4)
         )

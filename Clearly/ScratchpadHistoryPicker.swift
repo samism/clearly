@@ -1,4 +1,5 @@
 import SwiftUI
+import ClearlyCore
 
 struct ScratchpadHistoryPicker: View {
     @Environment(ScratchpadManager.self) private var manager
@@ -237,7 +238,7 @@ struct ScratchpadHistoryRow: View {
     @ViewBuilder
     private var indicator: some View {
         Circle()
-            .fill(Color.accentColor)
+            .fill(Theme.accentColorSwiftUI)
             .frame(width: 5, height: 5)
             .opacity(isCurrent ? 1 : 0)
             .frame(width: 6, alignment: .center)
@@ -251,7 +252,7 @@ struct ScratchpadHistoryRow: View {
 
     private var backgroundFill: AnyShapeStyle {
         if isSelected {
-            return AnyShapeStyle(Color.accentColor.opacity(0.14))
+            return AnyShapeStyle(Theme.accentColorSwiftUI.opacity(0.14))
         }
         if isHovered {
             return AnyShapeStyle(Color.primary.opacity(0.05))

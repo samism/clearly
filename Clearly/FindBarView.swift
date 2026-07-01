@@ -70,7 +70,7 @@ struct FindBarView: View {
             .padding(.vertical, 5)
             .background(
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.04))
+                    .fill(Theme.hoverColor(inDark: colorScheme == .dark))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
@@ -94,7 +94,7 @@ struct FindBarView: View {
             }
             .buttonStyle(.plain)
             .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(Color.accentColor)
+            .foregroundStyle(Theme.accentForegroundColorSwiftUI)
         }
     }
 
@@ -124,24 +124,24 @@ struct FindBarView: View {
             .padding(.vertical, 5)
             .background(
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(Color.primary.opacity(colorScheme == .dark ? 0.08 : 0.04))
+                    .fill(Theme.hoverColor(inDark: colorScheme == .dark))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
-                    .strokeBorder(Color.accentColor.opacity(isReplaceFieldFocused ? 0.4 : 0), lineWidth: 1)
+                    .strokeBorder(Theme.accentColorSwiftUI.opacity(isReplaceFieldFocused ? 0.4 : 0), lineWidth: 1)
                     .animation(Theme.Motion.hover, value: isReplaceFieldFocused)
             )
 
             Button("Replace All") { findState.editorPerformReplaceAll?() }
                 .buttonStyle(.plain)
                 .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(findState.canReplaceAll ? Color.accentColor : Color.secondary)
+                .foregroundStyle(findState.canReplaceAll ? Theme.accentForegroundColorSwiftUI : Color.secondary)
                 .disabled(!findState.canReplaceAll)
 
             Button("Replace") { findState.editorPerformReplace?() }
                 .buttonStyle(.plain)
                 .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(findState.canReplace ? Color.accentColor : Color.secondary)
+                .foregroundStyle(findState.canReplace ? Theme.accentForegroundColorSwiftUI : Color.secondary)
                 .disabled(!findState.canReplace)
         }
     }
@@ -174,7 +174,7 @@ struct FindBarView: View {
 
     private var borderColor: Color {
         if hasRegexError { return Color.red.opacity(0.5) }
-        if isFieldFocused { return Color.accentColor.opacity(0.4) }
+        if isFieldFocused { return Theme.accentColorSwiftUI.opacity(0.4) }
         return Color.clear
     }
 }
@@ -194,7 +194,7 @@ private struct DisclosureChevron: View {
                 .background(
                     RoundedRectangle(cornerRadius: 5)
                         .fill(isHovering
-                            ? Color.primary.opacity(colorScheme == .dark ? Theme.hoverOpacityDark : Theme.hoverOpacity)
+                            ? Theme.hoverColor(inDark: colorScheme == .dark)
                             : Color.clear)
                 )
                 .contentShape(Rectangle())
@@ -218,7 +218,7 @@ private struct FindOptionToggle: View {
         Button(action: { isOn.toggle() }) {
             Text(label)
                 .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                .foregroundStyle(isOn ? Color.accentColor : (isHovering ? .primary : .secondary))
+                .foregroundStyle(isOn ? Theme.accentForegroundColorSwiftUI : (isHovering ? .primary : .secondary))
                 .frame(width: 20, height: 18)
                 .background(
                     RoundedRectangle(cornerRadius: 4)
@@ -234,10 +234,10 @@ private struct FindOptionToggle: View {
 
     private var backgroundFill: Color {
         if isOn {
-            return Color.accentColor.opacity(0.18)
+            return Theme.accentColorSwiftUI.opacity(0.18)
         }
         if isHovering {
-            return Color.primary.opacity(colorScheme == .dark ? Theme.hoverOpacityDark : Theme.hoverOpacity)
+            return Theme.hoverColor(inDark: colorScheme == .dark)
         }
         return Color.clear
     }
@@ -259,7 +259,7 @@ private struct FindNavButton: View {
                 .background(
                     RoundedRectangle(cornerRadius: 6)
                         .fill(isHovering && !disabled
-                            ? Color.primary.opacity(colorScheme == .dark ? Theme.hoverOpacityDark : Theme.hoverOpacity)
+                            ? Theme.hoverColor(inDark: colorScheme == .dark)
                             : Color.clear)
                 )
         }

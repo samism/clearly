@@ -149,7 +149,7 @@ struct BottomToolbar: View {
         .buttonStyle(.plain)
         .glassEffect(
             outlineState.isVisible
-                ? .regular.tint(Color.accentColor.opacity(0.35)).interactive()
+                ? .regular.tint(Theme.accentColorSwiftUI.opacity(0.35)).interactive()
                 : .regular.interactive(),
             in: .circle
         )
@@ -303,7 +303,7 @@ private struct BottomToolbarIconStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .frame(width: 28, height: 28)
-            .foregroundStyle(isActive ? Color.accentColor : Color.secondary)
+            .foregroundStyle(isActive ? Theme.accentForegroundColorSwiftUI : Color.secondary)
             .background {
                 let opacity: Double = {
                     if configuration.isPressed { return 0.16 }
@@ -312,7 +312,7 @@ private struct BottomToolbarIconStyle: ButtonStyle {
                     return 0
                 }()
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(isActive ? Color.accentColor.opacity(opacity) : Color.primary.opacity(opacity))
+                    .fill(isActive ? Theme.accentColorSwiftUI.opacity(opacity) : Color.primary.opacity(opacity))
             }
             .contentShape(Rectangle())
             .onHover { isHovering = $0 }
