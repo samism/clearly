@@ -123,7 +123,7 @@ pre code {
 
 /* Code filename header */
 .code-filename {
-    font-family: "SF Mono", SFMono-Regular, Menlo, monospace;
+    font-family: "JetBrains Mono", "JetBrainsMono-Regular", "SF Mono", SFMono-Regular, Menlo, monospace;
     font-size: 0.8em;
     padding: 0.5em 1.25em;
     background: #EDEDF0;

@@ -73,9 +73,11 @@ targets:
         DEVELOPMENT_TEAM: W33JZPPPFN
       configs:
         Debug:
-          PRODUCT_BUNDLE_IDENTIFIER: com.sabotage.clearly.dev
+          PRODUCT_BUNDLE_IDENTIFIER: com.samism.clearly.dev
           PRODUCT_NAME: "Clearly Dev"
-          CODE_SIGN_STYLE: Automatic
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: "-"
+          DEVELOPMENT_TEAM: ""
         Release:
           CODE_SIGN_STYLE: Automatic
 
@@ -171,8 +173,10 @@ targets:
         DEVELOPMENT_TEAM: W33JZPPPFN
       configs:
         Debug:
-          PRODUCT_BUNDLE_IDENTIFIER: com.sabotage.clearly.dev.quicklook
-          CODE_SIGN_STYLE: Automatic
+          PRODUCT_BUNDLE_IDENTIFIER: com.samism.clearly.dev.quicklook
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: "-"
+          DEVELOPMENT_TEAM: ""
         Release:
           CODE_SIGN_STYLE: Automatic
 

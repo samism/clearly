@@ -50,11 +50,29 @@ public enum PlatformTextAttributes {
 }
 
 public extension PlatformFont {
+    static func clearlySansSystemFont(ofSize size: CGFloat, weight: PlatformFontWeight) -> PlatformFont {
+        #if os(macOS)
+        let fontName = weight == .bold ? "HelveticaNeue-Bold" : "HelveticaNeue"
+        if let font = NSFont(name: fontName, size: size) { return font }
+        let platformWeight: NSFont.Weight = weight == .bold ? .bold : .regular
+        return NSFont.systemFont(ofSize: size, weight: platformWeight)
+        #else
+        let fontName = weight == .bold ? "HelveticaNeue-Bold" : "HelveticaNeue"
+        if let font = UIFont(name: fontName, size: size) { return font }
+        let platformWeight: UIFont.Weight = weight == .bold ? .bold : .regular
+        return UIFont.systemFont(ofSize: size, weight: platformWeight)
+        #endif
+    }
+
     static func clearlyMonospacedSystemFont(ofSize size: CGFloat, weight: PlatformFontWeight) -> PlatformFont {
         #if os(macOS)
+        let fontName = weight == .bold ? "JetBrainsMono-Bold" : "JetBrainsMono-Regular"
+        if let font = NSFont(name: fontName, size: size) { return font }
         let platformWeight: NSFont.Weight = weight == .bold ? .bold : .regular
         return NSFont.monospacedSystemFont(ofSize: size, weight: platformWeight)
         #else
+        let fontName = weight == .bold ? "JetBrainsMono-Bold" : "JetBrainsMono-Regular"
+        if let font = UIFont(name: fontName, size: size) { return font }
         let platformWeight: UIFont.Weight = weight == .bold ? .bold : .regular
         return UIFont.monospacedSystemFont(ofSize: size, weight: platformWeight)
         #endif
@@ -77,9 +95,11 @@ public extension PlatformFont {
     /// Builds a bold + italic monospaced system font at the given size.
     static func clearlyMonospacedBoldItalic(size: CGFloat) -> PlatformFont {
         #if os(macOS)
+        if let font = NSFont(name: "JetBrainsMono-BoldItalic", size: size) { return font }
         let bold = NSFont.monospacedSystemFont(ofSize: size, weight: .bold)
         return NSFontManager.shared.convert(bold, toHaveTrait: .italicFontMask)
         #else
+        if let font = UIFont(name: "JetBrainsMono-BoldItalic", size: size) { return font }
         let bold = UIFont.monospacedSystemFont(ofSize: size, weight: .bold)
         var traits = bold.fontDescriptor.symbolicTraits
         traits.insert(.traitItalic)

@@ -210,7 +210,7 @@ public final class MarkdownSyntaxHighlighter: NSObject {
                         textStorage.addAttribute(Attr.foregroundColor, value: Theme.syntaxColor, range: syntaxRange)
                         textStorage.addAttributes([
                             Attr.foregroundColor: Theme.headingColor,
-                            Attr.font: PlatformFont.clearlyMonospacedSystemFont(ofSize: Theme.editorFontSize + 4, weight: .bold)
+                            Attr.font: Theme.editorHeadingFont
                         ], range: contentRange)
                     }
 
@@ -223,7 +223,7 @@ public final class MarkdownSyntaxHighlighter: NSObject {
                         textStorage.addAttribute(Attr.foregroundColor, value: Theme.syntaxColor, range: closeRange)
                         textStorage.addAttributes([
                             Attr.foregroundColor: Theme.boldColor,
-                            Attr.font: PlatformFont.clearlyMonospacedSystemFont(ofSize: Theme.editorFontSize, weight: .bold)
+                            Attr.font: Theme.editorBoldFont
                         ], range: contentRange)
                     }
 
@@ -234,10 +234,9 @@ public final class MarkdownSyntaxHighlighter: NSObject {
                         let closeRange = match.range(at: 3)
                         textStorage.addAttribute(Attr.foregroundColor, value: Theme.syntaxColor, range: openRange)
                         textStorage.addAttribute(Attr.foregroundColor, value: Theme.syntaxColor, range: closeRange)
-                        let boldItalicFont = PlatformFont.clearlyMonospacedBoldItalic(size: Theme.editorFontSize)
                         textStorage.addAttributes([
                             Attr.foregroundColor: Theme.boldColor,
-                            Attr.font: boldItalicFont
+                            Attr.font: Theme.editorBoldItalicFont
                         ], range: contentRange)
                     }
 
@@ -252,10 +251,9 @@ public final class MarkdownSyntaxHighlighter: NSObject {
                         if closingRange.upperBound <= textStorage.length {
                             textStorage.addAttribute(Attr.foregroundColor, value: Theme.syntaxColor, range: closingRange)
                         }
-                        let italicFont = Theme.editorFont.withItalicTrait()
                         textStorage.addAttributes([
                             Attr.foregroundColor: Theme.italicColor,
-                            Attr.font: italicFont
+                            Attr.font: Theme.editorItalicFont
                         ], range: contentRange)
                     }
 
@@ -279,13 +277,17 @@ public final class MarkdownSyntaxHighlighter: NSObject {
                         let closeRange = match.range(at: 3)
                         textStorage.addAttribute(Attr.foregroundColor, value: Theme.syntaxColor, range: openRange)
                         textStorage.addAttribute(Attr.foregroundColor, value: Theme.syntaxColor, range: closeRange)
+                        textStorage.addAttribute(Attr.font, value: Theme.editorCodeFont, range: match.range)
                         textStorage.addAttribute(Attr.foregroundColor, value: Theme.codeColor, range: contentRange)
                     }
 
                 case .codeBlock:
                     protectedRanges.append(ProtectedRange(range: match.range, kind: .code))
                     // Fade the entire block
-                    textStorage.addAttribute(Attr.foregroundColor, value: Theme.codeColor, range: match.range)
+                    textStorage.addAttributes([
+                        Attr.font: Theme.editorCodeFont,
+                        Attr.foregroundColor: Theme.codeColor
+                    ], range: match.range)
                     // Fade the fences specifically
                     if match.numberOfRanges >= 2 {
                         textStorage.addAttribute(Attr.foregroundColor, value: Theme.syntaxColor, range: match.range(at: 1))
@@ -579,7 +581,7 @@ public final class MarkdownSyntaxHighlighter: NSObject {
                         textStorage.addAttribute(Attr.foregroundColor, value: Theme.syntaxColor, range: syntaxRange)
                         textStorage.addAttributes([
                             Attr.foregroundColor: Theme.headingColor,
-                            Attr.font: PlatformFont.clearlyMonospacedSystemFont(ofSize: Theme.editorFontSize + 4, weight: .bold)
+                            Attr.font: Theme.editorHeadingFont
                         ], range: contentRange)
                     }
 
@@ -592,7 +594,7 @@ public final class MarkdownSyntaxHighlighter: NSObject {
                         textStorage.addAttribute(Attr.foregroundColor, value: Theme.syntaxColor, range: closeRange)
                         textStorage.addAttributes([
                             Attr.foregroundColor: Theme.boldColor,
-                            Attr.font: PlatformFont.clearlyMonospacedSystemFont(ofSize: Theme.editorFontSize, weight: .bold)
+                            Attr.font: Theme.editorBoldFont
                         ], range: contentRange)
                     }
 
@@ -603,10 +605,9 @@ public final class MarkdownSyntaxHighlighter: NSObject {
                         let closeRange = match.range(at: 3)
                         textStorage.addAttribute(Attr.foregroundColor, value: Theme.syntaxColor, range: openRange)
                         textStorage.addAttribute(Attr.foregroundColor, value: Theme.syntaxColor, range: closeRange)
-                        let boldItalicFont = PlatformFont.clearlyMonospacedBoldItalic(size: Theme.editorFontSize)
                         textStorage.addAttributes([
                             Attr.foregroundColor: Theme.boldColor,
-                            Attr.font: boldItalicFont
+                            Attr.font: Theme.editorBoldItalicFont
                         ], range: contentRange)
                     }
 
@@ -620,10 +621,9 @@ public final class MarkdownSyntaxHighlighter: NSObject {
                         if closingRange.upperBound <= textStorage.length {
                             textStorage.addAttribute(Attr.foregroundColor, value: Theme.syntaxColor, range: closingRange)
                         }
-                        let italicFont = Theme.editorFont.withItalicTrait()
                         textStorage.addAttributes([
                             Attr.foregroundColor: Theme.italicColor,
-                            Attr.font: italicFont
+                            Attr.font: Theme.editorItalicFont
                         ], range: contentRange)
                     }
 
@@ -647,6 +647,7 @@ public final class MarkdownSyntaxHighlighter: NSObject {
                         let closeRange = match.range(at: 3)
                         textStorage.addAttribute(Attr.foregroundColor, value: Theme.syntaxColor, range: openRange)
                         textStorage.addAttribute(Attr.foregroundColor, value: Theme.syntaxColor, range: closeRange)
+                        textStorage.addAttribute(Attr.font, value: Theme.editorCodeFont, range: match.range)
                         textStorage.addAttribute(Attr.foregroundColor, value: Theme.codeColor, range: contentRange)
                     }
 
@@ -654,7 +655,10 @@ public final class MarkdownSyntaxHighlighter: NSObject {
                     // Code blocks are multi-line; handled via full-document scan above.
                     // Within the paragraph range, a partial code block match means
                     // we're at a fence line — color it as code.
-                    textStorage.addAttribute(Attr.foregroundColor, value: Theme.codeColor, range: match.range)
+                    textStorage.addAttributes([
+                        Attr.font: Theme.editorCodeFont,
+                        Attr.foregroundColor: Theme.codeColor
+                    ], range: match.range)
                     if match.numberOfRanges >= 2 {
                         textStorage.addAttribute(Attr.foregroundColor, value: Theme.syntaxColor, range: match.range(at: 1))
                     }
@@ -739,7 +743,10 @@ public final class MarkdownSyntaxHighlighter: NSObject {
     private func applyProtectedBlockStyle(_ block: ProtectedRange, to textStorage: PlatformTextStorage, range: NSRange) {
         switch block.kind {
         case .code:
-            textStorage.addAttribute(Attr.foregroundColor, value: Theme.codeColor, range: range)
+            textStorage.addAttributes([
+                Attr.font: Theme.editorCodeFont,
+                Attr.foregroundColor: Theme.codeColor
+            ], range: range)
 
         case .math:
             textStorage.addAttribute(Attr.foregroundColor, value: Theme.mathColor, range: range)

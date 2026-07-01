@@ -294,6 +294,9 @@ public struct PreviewPalette: Sendable {
 }
 
 public enum PreviewCSS {
+    private static let sansFontFamily = "\"Helvetica Neue\", Helvetica, Arial, sans-serif"
+    private static let monoFontFamily = "\"JetBrains Mono\", \"JetBrainsMono-Regular\", \"SF Mono\", SFMono-Regular, Menlo, monospace"
+
     /// Generates the preview/export stylesheet. Colors are driven by CSS custom properties defined in a
     /// `:root` block built from `light`; `@media (prefers-color-scheme: dark)` and `@media print` each
     /// redeclare `:root` with their respective palettes. When `forExport: true`, the print palette is
@@ -315,11 +318,11 @@ public enum PreviewCSS {
             bodyFontFamily = "\"New York\", \"Iowan Old Style\", Georgia, serif"
             headingFontFamily = "\"New York\", \"Iowan Old Style\", Georgia, serif"
         case "sfMono":
-            bodyFontFamily = "\"SF Mono\", SFMono-Regular, Menlo, monospace"
-            headingFontFamily = "\"SF Mono\", SFMono-Regular, Menlo, monospace"
+            bodyFontFamily = Self.monoFontFamily
+            headingFontFamily = Self.monoFontFamily
         default:
-            bodyFontFamily = "system-ui, -apple-system, BlinkMacSystemFont, \"SF Pro Text\", \"SF Pro Display\", \"Helvetica Neue\", sans-serif"
-            headingFontFamily = "system-ui, -apple-system, BlinkMacSystemFont, \"SF Pro Display\", \"Helvetica Neue\", sans-serif"
+            bodyFontFamily = Self.sansFontFamily
+            headingFontFamily = Self.sansFontFamily
         }
 
         let basePalette = forExport ? print : light
@@ -519,7 +522,7 @@ public enum PreviewCSS {
         }
 
         code {
-            font-family: "SF Mono", SFMono-Regular, Menlo, monospace;
+            font-family: \(Self.monoFontFamily);
             font-size: 0.875em;
             background-color: var(--c-code-bg);
             color: var(--c-code-fg);
@@ -528,7 +531,7 @@ public enum PreviewCSS {
         }
 
         .code-filename {
-            font-family: "SF Mono", SFMono-Regular, Menlo, monospace;
+            font-family: \(Self.monoFontFamily);
             font-size: 0.8em;
             padding: 0.5em 1.25em;
             background: var(--c-code-filename-bg);
@@ -667,7 +670,7 @@ public enum PreviewCSS {
 
         .code-fold-summary {
             display: none;
-            font-family: "SF Mono", SFMono-Regular, Menlo, monospace;
+            font-family: \(Self.monoFontFamily);
             font-size: 0.8em;
             padding: 1.125em 1.25em;
             background-color: var(--c-pre-bg);

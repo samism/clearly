@@ -56,6 +56,12 @@ final class PreviewCSSTests: XCTestCase {
                       "print media query should contain a :root block")
     }
 
+    func testStylesheetUsesPreferredFonts() {
+        let sheet = PreviewCSS.css()
+        XCTAssertTrue(sheet.contains("font-family: \"Helvetica Neue\", Helvetica, Arial, sans-serif;"))
+        XCTAssertTrue(sheet.contains("font-family: \"JetBrains Mono\", \"JetBrainsMono-Regular\", \"SF Mono\", SFMono-Regular, Menlo, monospace;"))
+    }
+
     // MARK: - Palette value checks (ensures light/dark/print match pre-tokenization values)
 
     func testLightPaletteValuesMatchPreTokenizationPreview() {

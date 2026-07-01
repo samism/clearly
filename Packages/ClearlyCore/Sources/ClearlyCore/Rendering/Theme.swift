@@ -17,10 +17,42 @@ public enum Theme {
     }
 
     public static var editorFont: PlatformFont {
+        editorBodyFont
+    }
+
+    public static var editorBodyFont: PlatformFont {
+        PlatformFont.clearlySansSystemFont(ofSize: editorFontSize, weight: .regular)
+    }
+
+    public static var editorBoldFont: PlatformFont {
+        PlatformFont.clearlySansSystemFont(ofSize: editorFontSize, weight: .bold)
+    }
+
+    public static var editorItalicFont: PlatformFont {
+        editorBodyFont.withItalicTrait()
+    }
+
+    public static var editorBoldItalicFont: PlatformFont {
+        editorBoldFont.withItalicTrait()
+    }
+
+    public static var editorHeadingFont: PlatformFont {
+        PlatformFont.clearlySansSystemFont(ofSize: editorFontSize + 4, weight: .bold)
+    }
+
+    public static var editorCodeFont: PlatformFont {
         PlatformFont.clearlyMonospacedSystemFont(ofSize: editorFontSize, weight: .regular)
     }
 
-    public static var editorFontSwiftUI: Font { Font.system(size: editorFontSize, design: .monospaced) }
+    public static var editorFontSwiftUI: Font { sansFont(size: editorFontSize) }
+
+    public static func sansFont(size: CGFloat, weight: Font.Weight = .regular) -> Font {
+        Font.custom("Helvetica Neue", size: size).weight(weight)
+    }
+
+    public static func monoFont(size: CGFloat, weight: Font.Weight = .regular) -> Font {
+        Font.custom("JetBrains Mono", size: size).weight(weight)
+    }
 
     // MARK: - Margins
     public static let editorInsetX: CGFloat = 60
@@ -32,8 +64,9 @@ public enum Theme {
 
     /// Desired line height = font natural height + lineSpacing
     public static var editorLineHeight: CGFloat {
-        let font = editorFont
-        return ceil(font.ascender - font.descender + font.leading) + lineSpacing
+        let bodyHeight = editorBodyFont.ascender - editorBodyFont.descender + editorBodyFont.leading
+        let codeHeight = editorCodeFont.ascender - editorCodeFont.descender + editorCodeFont.leading
+        return ceil(max(bodyHeight, codeHeight)) + lineSpacing
     }
 
     /// Baseline offset to vertically center text within the line height
@@ -158,27 +191,27 @@ public enum Theme {
     /// Dynamic Type wrapping for chrome fonts happens at call sites in Phase 12b.8.
     public enum Typography {
         /// Tab bar labels (active + inactive share the same font; use font weight on the view to differentiate if needed).
-        public static let tabLabel = Font.system(size: 12, weight: .medium)
+        public static let tabLabel = Theme.sansFont(size: 12, weight: .medium)
         /// Active tab label (same size + weight as inactive; pinned for call-site clarity).
-        public static let tabLabelActive = Font.system(size: 12, weight: .medium)
+        public static let tabLabelActive = Theme.sansFont(size: 12, weight: .medium)
         /// Sidebar / file list row text (iPad Mac-parity; iPhone uses this at its native touch-target row height).
-        public static let sidebarRow = Font.system(size: 13)
+        public static let sidebarRow = Theme.sansFont(size: 13)
         /// Small-caps-style section headers ("OUTLINE", "BACKLINKS"). Apply `.tracking(sectionHeaderTracking)` at the call site.
-        public static let sectionHeader = Font.system(size: 11, weight: .semibold)
+        public static let sectionHeader = Theme.sansFont(size: 11, weight: .semibold)
         /// Letter-spacing for `sectionHeader`; applied via `.tracking(_:)` modifier on the `Text`.
         public static let sectionHeaderTracking: CGFloat = 1.5
         /// Count pill badges (Backlinks "12", Tags "3", etc.).
-        public static let countBadge = Font.system(size: 10, weight: .medium)
+        public static let countBadge = Theme.sansFont(size: 10, weight: .medium)
         /// Toolbar button / menu item labels.
-        public static let toolbarLabel = Font.system(size: 14, weight: .medium)
+        public static let toolbarLabel = Theme.sansFont(size: 14, weight: .medium)
         /// Search / find field text.
-        public static let findField = Font.system(size: 13)
+        public static let findField = Theme.sansFont(size: 13)
         /// Find-result count ("3 of 7"), prev/next arrow button text.
-        public static let findCount = Font.system(size: 11, weight: .medium)
+        public static let findCount = Theme.sansFont(size: 11, weight: .medium)
         /// Welcome screen title ("Welcome to Clearly"). Apply `.tracking(-0.3)` at the call site to match Mac.
-        public static let welcomeTitle = Font.system(size: 26, weight: .semibold)
+        public static let welcomeTitle = Theme.sansFont(size: 26, weight: .semibold)
         /// Welcome screen subtitle copy.
-        public static let welcomeSubtitle = Font.system(size: 14)
+        public static let welcomeSubtitle = Theme.sansFont(size: 14)
     }
 
     // MARK: - Spacing

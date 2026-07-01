@@ -22,7 +22,7 @@ final class LineNumberGutterView: NSView {
         guard let textView else { return 36 }
         let lineCount = max(1, (textView.string as NSString).components(separatedBy: "\n").count)
         let digits = max(2, String(lineCount).count)
-        let charWidth = NSString(string: "8").size(withAttributes: [.font: Theme.editorFont]).width
+        let charWidth = NSString(string: "8").size(withAttributes: [.font: Theme.editorCodeFont]).width
         return ceil(CGFloat(digits) * charWidth + 20)
     }
 
@@ -110,7 +110,7 @@ final class LineNumberGutterView: NSView {
     }
 
     private func drawLineNumber(_ number: Int, at y: CGFloat, isCurrent: Bool) {
-        let font = Theme.editorFont
+        let font = Theme.editorCodeFont
         let color = isCurrent ? Theme.textColor : Theme.syntaxColor
         let attrs: [NSAttributedString.Key: Any] = [
             .font: font,

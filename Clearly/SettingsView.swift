@@ -85,9 +85,9 @@ struct SettingsView: View {
             }
 
             Picker("Preview Font", selection: $previewFontFamily) {
-                Text("San Francisco").tag("sanFrancisco")
+                Text("Helvetica Neue").tag("sanFrancisco")
                 Text("New York").tag("newYork")
-                Text("SF Mono").tag("sfMono")
+                Text("JetBrains Mono").tag("sfMono")
             }
 
             Picker("Content Width", selection: $contentWidth) {
