@@ -52,10 +52,6 @@ struct SidebarView: View {
             )
 
             Spacer()
-
-            if mode == .folder && folderState.folderURL != nil {
-                newFileButton
-            }
         }
         .padding(.horizontal, 12)
         .padding(.top, 9)
@@ -90,25 +86,6 @@ struct SidebarView: View {
         .pointerStyle(.link)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
-
-    private var newFileButton: some View {
-        Button {
-            createMarkdownDocument(in: folderState)
-        } label: {
-            Image(systemName: "plus")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .frame(width: 24, height: 24)
-                .background(
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(Theme.hoverColor(inDark: colorScheme == .dark).opacity(0.45))
-                )
-        }
-        .buttonStyle(.plain)
-        .pointerStyle(.link)
-        .help("New markdown file in this folder")
-        .accessibilityLabel("New markdown file in this folder")
-    }
 }
 
 /// Folder-mode sidebar content: the folder the window is oriented to and the
@@ -127,9 +104,6 @@ private struct FolderListView: View {
                         Text("No markdown files")
                             .font(.system(size: 12))
                             .foregroundStyle(.tertiary)
-                        Text("Click + to create one")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.quaternary)
                     }
                     .frame(maxWidth: .infinity)
                     Spacer()
@@ -387,26 +361,27 @@ func configureDocumentWindowChrome(_ window: NSWindow?) {
     window.titleVisibility = .visible
     window.titlebarAppearsTransparent = false
     window.styleMask.remove(.fullSizeContentView)
-    hideNativeTabAddButton(in: window)
+    configureNativeTabAddButton(in: window)
 
     Task { @MainActor [weak window] in
-        hideNativeTabAddButton(in: window)
+        configureNativeTabAddButton(in: window)
     }
 }
 
 @MainActor
-private func hideNativeTabAddButton(in window: NSWindow?) {
+private func configureNativeTabAddButton(in window: NSWindow?) {
     guard let tabGroup = window?.tabGroup else { return }
     let selector = NSSelectorFromString("plusTab")
     guard tabGroup.responds(to: selector),
-          let plus = tabGroup.perform(selector)?.takeUnretainedValue() as? NSView else { return }
+          let view = tabGroup.perform(selector)?.takeUnretainedValue() as? NSView,
+          let control = view as? NSControl ?? view.subviews.compactMap({ $0 as? NSControl }).first else { return }
 
-    // ponytail: AppKit exposes tab groups but not a public switch for the
-    // native tab-bar add button. Replace this if Hypergraphia gets custom tabs.
-    plus.isHidden = true
-    if let control = plus as? NSControl {
-        control.isEnabled = false
-    }
+    // ponytail: AppKit exposes the tab button view but not a public way to
+    // retarget it. Replace this when Hypergraphia owns a custom tab bar.
+    control.target = NativeTabAddButtonTarget.shared
+    control.action = #selector(NativeTabAddButtonTarget.createFileFromTabBar(_:))
+    control.isEnabled = true
+    control.isHidden = false
 }
 
 /// Opens a markdown file as a document window. When it came from a folder

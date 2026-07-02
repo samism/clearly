@@ -118,7 +118,9 @@ struct ContentView: View {
             }
         }
         .frame(minWidth: 600, minHeight: 360)
-        .background(WindowTitleSetter(fileURL: fileURL))
+        .background(WindowTitleSetter(fileURL: fileURL) { window in
+            newFile(tabbingInto: window)
+        })
         .focusedSceneValue(\.findState, findState)
         .focusedSceneValue(\.outlineState, outlineState)
         .focusedSceneValue(\.viewMode, $viewMode)
@@ -250,8 +252,8 @@ struct ContentView: View {
         outlineState.isVisible = true
     }
 
-    private func newFile() {
-        createMarkdownDocument(in: folderState, promptForFolder: true)
+    private func newFile(tabbingInto window: NSWindow? = nil) {
+        createMarkdownDocument(in: folderState, promptForFolder: true, tabbingInto: window)
     }
 
     private func orientSidebarToDocumentFolder() {
@@ -280,6 +282,7 @@ struct ContentView: View {
 
 private struct WindowTitleSetter: NSViewRepresentable {
     let fileURL: URL?
+    let newFile: (NSWindow?) -> Void
 
     func makeNSView(context: Context) -> NSView {
         NSView()
@@ -291,6 +294,9 @@ private struct WindowTitleSetter: NSViewRepresentable {
             if let window = nsView?.window {
                 window.title = title
                 configureDocumentWindowChrome(window)
+                window.hypergraphiaNewFileAction = { [weak window] in
+                    newFile(window)
+                }
             }
 
             guard let target = fileURL?.standardizedFileURL else { return }
@@ -299,5 +305,9 @@ private struct WindowTitleSetter: NSViewRepresentable {
             }
             setDocumentTitle(document, for: fileURL)
         }
+    }
+
+    static func dismantleNSView(_ nsView: NSView, coordinator: ()) {
+        nsView.window?.hypergraphiaNewFileAction = nil
     }
 }

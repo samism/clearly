@@ -414,6 +414,38 @@ private extension String {
     }
 }
 
+private final class WindowNewFileActionBox: NSObject {
+    let action: () -> Void
+
+    init(_ action: @escaping () -> Void) {
+        self.action = action
+    }
+}
+
+private var windowNewFileActionKey: UInt8 = 0
+
+extension NSWindow {
+    var hypergraphiaNewFileAction: (() -> Void)? {
+        get {
+            (objc_getAssociatedObject(self, &windowNewFileActionKey) as? WindowNewFileActionBox)?.action
+        }
+        set {
+            let box = newValue.map(WindowNewFileActionBox.init)
+            objc_setAssociatedObject(self, &windowNewFileActionKey, box, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        }
+    }
+}
+
+@MainActor
+final class NativeTabAddButtonTarget: NSObject {
+    static let shared = NativeTabAddButtonTarget()
+
+    @objc func createFileFromTabBar(_ sender: Any?) {
+        let window = (sender as? NSView)?.window ?? NSApp.keyWindow ?? NSApp.mainWindow
+        window?.hypergraphiaNewFileAction?()
+    }
+}
+
 // MARK: - App Entry
 
 @main
