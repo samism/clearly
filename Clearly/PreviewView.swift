@@ -152,6 +152,12 @@ struct PreviewView: NSViewRepresentable {
                 context.coordinator.skipNextReload = false
                 context.coordinator.lastContentKey = contentKey
                 context.coordinator.renderedMarkdown = markdown
+                // Keep the page's embedded source (selection expansion) in
+                // sync even though the HTML isn't reloaded.
+                if let data = try? JSONSerialization.data(withJSONObject: markdown, options: .fragmentsAllowed),
+                   let json = String(data: data, encoding: .utf8) {
+                    webView.evaluateJavaScript("window.clearlySetSource && window.clearlySetSource(\(json))")
+                }
             } else {
                 loadHTML(in: webView, context: context)
             }
@@ -343,6 +349,7 @@ struct PreviewView: NSViewRepresentable {
         \(MermaidSupport.scriptHTML)
         \(MermaidLightboxSupport.scriptHTML(for: htmlBody))
         \(SyntaxHighlightSupport.scriptHTML(for: htmlBody))
+        \(LiveEditSupport.sourceScriptHTML(for: markdown))
         \(LiveEditSupport.scriptHTML)
         </html>
         """
