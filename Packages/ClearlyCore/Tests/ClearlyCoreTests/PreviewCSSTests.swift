@@ -179,6 +179,8 @@ final class PreviewCSSTests: XCTestCase {
         XCTAssertTrue(sheet.contains("text-underline-offset: 2px;"))
         // Tables render a full grid.
         XCTAssertTrue(sheet.contains("th + th, td + td {"))
+        // Horizontal rules have a tall hit box with the line drawn centered.
+        XCTAssertTrue(sheet.contains("center / 100% 0.5px no-repeat"))
     }
 
     func testBodyMaxWidthIsPassedThroughUnclamped() {

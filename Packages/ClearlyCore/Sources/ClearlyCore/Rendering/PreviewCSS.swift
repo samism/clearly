@@ -953,10 +953,16 @@ public enum PreviewCSS {
             opacity: 0.6;
         }
 
+        /* The rule is drawn centered inside a tall box so hovering/clicking
+           it in live mode doesn't demand pixel-perfect aim. Margins are
+           rebalanced to keep the same total vertical rhythm. */
         hr {
             border: none;
-            border-top: 0.5px solid var(--c-hr-border);
-            margin: 2.5em 0;
+            height: 1.5em;
+            background: linear-gradient(var(--c-hr-border), var(--c-hr-border)) center / 100% 0.5px no-repeat;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+            margin: 1.75em 0;
         }
 
         .page-break {
