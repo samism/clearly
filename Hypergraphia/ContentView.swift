@@ -10,7 +10,7 @@ struct ContentView: View {
     let fileURL: URL?
 
     @State private var viewMode: ViewMode
-    @State private var sidebarMode: SidebarMode = .outline
+    @State private var sidebarMode: SidebarMode = .folder
     @StateObject private var outlineState = OutlineState()
     @StateObject private var folderState = FolderState()
     @StateObject private var findState = FindState()
@@ -118,12 +118,14 @@ struct ContentView: View {
             }
         }
         .frame(minWidth: 600, minHeight: 360)
+        .background(WindowTitleSetter(fileURL: fileURL))
         .focusedSceneValue(\.findState, findState)
         .focusedSceneValue(\.outlineState, outlineState)
         .focusedSceneValue(\.viewMode, $viewMode)
         .focusedSceneValue(\.exportPDFAction) { exportPDF() }
         .focusedSceneValue(\.printDocumentAction) { printDocument() }
         .focusedSceneValue(\.openFolderAction) { openFolder() }
+        .focusedSceneValue(\.newFileAction) { newFile() }
         .onAppear {
             outlineState.parseHeadings(from: document.text)
             statusBarState.updateText(document.text)
@@ -133,6 +135,8 @@ struct ContentView: View {
                 folderState.open(folder: folder)
                 sidebarMode = .folder
                 outlineState.isVisible = true
+            } else {
+                orientSidebarToDocumentFolder()
             }
         }
         .onChange(of: document.text) { _, newText in
@@ -143,6 +147,7 @@ struct ContentView: View {
             // Re-key bridges when the document is saved/renamed so a new
             // file's scroll position doesn't inherit the old fraction.
             positionSyncID = UUID().uuidString
+            orientSidebarToDocumentFolder()
         }
         .watchExternalChanges(fileURL: fileURL, text: $document.text) { url in
             // Sync SwiftUI's underlying NSDocument's fileModificationDate to
@@ -245,6 +250,15 @@ struct ContentView: View {
         outlineState.isVisible = true
     }
 
+    private func newFile() {
+        createMarkdownDocument(in: folderState, promptForFolder: true)
+    }
+
+    private func orientSidebarToDocumentFolder() {
+        guard let folder = fileURL?.deletingLastPathComponent() else { return }
+        folderState.open(folder: folder)
+    }
+
     private func exportPDF() {
         PDFExporter().exportPDF(
             markdown: document.text,
@@ -264,3 +278,23 @@ struct ContentView: View {
     }
 }
 
+private struct WindowTitleSetter: NSViewRepresentable {
+    let fileURL: URL?
+
+    func makeNSView(context: Context) -> NSView {
+        NSView()
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        DispatchQueue.main.async { [weak nsView] in
+            let title = displayTitle(for: fileURL)
+            nsView?.window?.title = title
+
+            guard let target = fileURL?.standardizedFileURL else { return }
+            let document = NSDocumentController.shared.documents.first { document in
+                document.fileURL?.standardizedFileURL == target
+            }
+            setDocumentTitle(document, for: fileURL)
+        }
+    }
+}

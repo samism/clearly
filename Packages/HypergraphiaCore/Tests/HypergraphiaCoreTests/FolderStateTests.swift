@@ -83,6 +83,31 @@ struct FolderStateTests {
         #expect(FolderState.newFileURL(in: folder).lastPathComponent == "Untitled 3.md")
     }
 
+    @Test func renamedFileURLPreservesOriginalExtension() throws {
+        let file = URL(fileURLWithPath: "/tmp/Old.md")
+
+        #expect(try FolderState.renamedFileURL(for: file, displayName: "New Name").lastPathComponent == "New Name.md")
+        #expect(try FolderState.renamedFileURL(for: file, displayName: "New Name.markdown").lastPathComponent == "New Name.md")
+    }
+
+    @Test func renamedFileURLRejectsBadNames() throws {
+        let file = URL(fileURLWithPath: "/tmp/Old.md")
+
+        do {
+            _ = try FolderState.renamedFileURL(for: file, displayName: " ")
+            #expect(Bool(false))
+        } catch let error as FolderStateError {
+            #expect(error == .emptyFileName)
+        }
+
+        do {
+            _ = try FolderState.renamedFileURL(for: file, displayName: "bad/name")
+            #expect(Bool(false))
+        } catch let error as FolderStateError {
+            #expect(error == .invalidFileName)
+        }
+    }
+
     @Test func createUntitledFileWritesAndRefreshes() throws {
         let folder = try makeTempFolder()
         defer { try? FileManager.default.removeItem(at: folder) }

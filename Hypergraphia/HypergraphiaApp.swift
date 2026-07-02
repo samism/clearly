@@ -418,6 +418,9 @@ struct HypergraphiaApp: App {
                 CheckForUpdatesView(updater: updaterController.updater)
                 #endif
             }
+            CommandGroup(replacing: .newItem) {
+                NewFileCommand()
+            }
             CommandGroup(after: .newItem) {
                 OpenFolderCommand()
             }
@@ -586,6 +589,10 @@ private struct OpenFolderActionKey: FocusedValueKey {
     typealias Value = () -> Void
 }
 
+private struct NewFileActionKey: FocusedValueKey {
+    typealias Value = () -> Void
+}
+
 private struct PrintDocumentActionKey: FocusedValueKey {
     typealias Value = () -> Void
 }
@@ -611,6 +618,10 @@ extension FocusedValues {
         get { self[OpenFolderActionKey.self] }
         set { self[OpenFolderActionKey.self] = newValue }
     }
+    var newFileAction: (() -> Void)? {
+        get { self[NewFileActionKey.self] }
+        set { self[NewFileActionKey.self] = newValue }
+    }
     var printDocumentAction: (() -> Void)? {
         get { self[PrintDocumentActionKey.self] }
         set { self[PrintDocumentActionKey.self] = newValue }
@@ -618,6 +629,18 @@ extension FocusedValues {
 }
 
 // MARK: - Per-document command views
+
+struct NewFileCommand: View {
+    @FocusedValue(\.newFileAction) var newFileAction
+
+    var body: some View {
+        Button("New File") {
+            newFileAction?()
+        }
+        .keyboardShortcut("n", modifiers: .command)
+        .disabled(newFileAction == nil)
+    }
+}
 
 struct ExportPrintCommands: View {
     @FocusedValue(\.exportPDFAction) var exportPDFAction

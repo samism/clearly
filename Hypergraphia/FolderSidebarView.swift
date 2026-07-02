@@ -2,14 +2,14 @@ import SwiftUI
 import AppKit
 import HypergraphiaCore
 
-/// Which content the left sidebar shows. Per-window: a window opened from a
-/// folder starts in `.folder`; everything else starts in `.outline`.
+/// Which content the left sidebar shows. Per-window, the file list is the
+/// default, and outline stays one click away.
 enum SidebarMode {
     case outline
     case folder
 }
 
-/// Left sidebar container: OUTLINE / FILES mode toggle in the header, then
+/// Left sidebar container: FILES / OUTLINES mode toggle in the header, then
 /// either the document outline or the folder file list.
 struct SidebarView: View {
     @Binding var mode: SidebarMode
@@ -40,54 +40,74 @@ struct SidebarView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 12) {
-            modeTab("FILES", .folder)
-            modeTab("OUTLINE", .outline)
+        HStack(spacing: 8) {
+            HStack(spacing: 2) {
+                modeTab("FILES", systemImage: "doc.text", .folder)
+                modeTab("OUTLINES", systemImage: "list.bullet.indent", .outline)
+            }
+            .padding(3)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Theme.hoverColor(inDark: colorScheme == .dark).opacity(0.55))
+            )
+
             Spacer()
+
             if mode == .folder && folderState.folderURL != nil {
                 newFileButton
             }
         }
         .padding(.horizontal, 12)
-        .padding(.top, 10)
-        .padding(.bottom, 6)
+        .padding(.top, 9)
+        .padding(.bottom, 7)
     }
 
-    private func modeTab(_ title: String, _ tabMode: SidebarMode) -> some View {
-        Button {
+    private func modeTab(_ title: String, systemImage: String, _ tabMode: SidebarMode) -> some View {
+        let isSelected = mode == tabMode
+
+        return Button {
             mode = tabMode
         } label: {
-            Text(title)
-                .font(.system(size: 11, weight: .semibold))
-                .tracking(1.5)
-                .foregroundStyle(mode == tabMode ? AnyShapeStyle(.secondary) : AnyShapeStyle(.quaternary))
+            Label {
+                Text(title)
+                    .font(.system(size: 10, weight: .semibold))
+            } icon: {
+                Image(systemName: systemImage)
+                    .font(.system(size: 10, weight: .semibold))
+            }
+            .labelStyle(.titleAndIcon)
+            .foregroundStyle(isSelected ? AnyShapeStyle(.primary) : AnyShapeStyle(.tertiary))
+            .padding(.horizontal, 8)
+            .frame(height: 22)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(isSelected
+                        ? Theme.backgroundColorSwiftUI.opacity(colorScheme == .dark ? 0.7 : 0.95)
+                        : Color.clear)
+            )
         }
         .buttonStyle(.plain)
         .pointerStyle(.link)
-        .accessibilityAddTraits(mode == tabMode ? .isSelected : [])
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     private var newFileButton: some View {
         Button {
-            createFile()
+            createMarkdownDocument(in: folderState)
         } label: {
             Image(systemName: "plus")
-                .font(.system(size: 11, weight: .semibold))
+                .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.secondary)
+                .frame(width: 24, height: 24)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(Theme.hoverColor(inDark: colorScheme == .dark).opacity(0.45))
+                )
         }
         .buttonStyle(.plain)
         .pointerStyle(.link)
         .help("New markdown file in this folder")
         .accessibilityLabel("New markdown file in this folder")
-    }
-
-    private func createFile() {
-        do {
-            let url = try folderState.createUntitledFile()
-            openMarkdownDocument(at: url, from: folderState.folderURL)
-        } catch {
-            NSAlert(error: error).runModal()
-        }
     }
 }
 
@@ -122,6 +142,8 @@ private struct FolderListView: View {
                                     isCurrent: file.url.standardizedFileURL == currentFileURL?.standardizedFileURL
                                 ) {
                                     openMarkdownDocument(at: file.url, from: folderURL)
+                                } onRename: {
+                                    rename(file)
                                 } onDelete: {
                                     delete(file)
                                 }
@@ -185,12 +207,48 @@ private struct FolderListView: View {
             NSAlert(error: error).runModal()
         }
     }
+
+    private func rename(_ file: FolderFile) {
+        guard let requestedName = RenamePanel.chooseName(for: file) else { return }
+
+        do {
+            let newURL = try FolderState.renamedFileURL(for: file.url, displayName: requestedName)
+            guard newURL.standardizedFileURL != file.url.standardizedFileURL else { return }
+            guard !FileManager.default.fileExists(atPath: newURL.path) else {
+                throw FolderStateError.fileAlreadyExists(newURL.lastPathComponent)
+            }
+
+            if let document = openDocument(for: file.url) {
+                document.move(to: newURL) { error in
+                    if let error {
+                        NSAlert(error: error).runModal()
+                        return
+                    }
+                    setDocumentTitle(document, for: newURL)
+                    folderState.refresh()
+                }
+            } else {
+                try FileManager.default.moveItem(at: file.url, to: newURL)
+                folderState.refresh()
+            }
+        } catch {
+            NSAlert(error: error).runModal()
+        }
+    }
+
+    private func openDocument(for url: URL) -> NSDocument? {
+        let target = url.standardizedFileURL
+        return NSDocumentController.shared.documents.first { document in
+            document.fileURL?.standardizedFileURL == target
+        }
+    }
 }
 
 private struct FileRow: View {
     let file: FolderFile
     let isCurrent: Bool
     let onTap: () -> Void
+    let onRename: () -> Void
     let onDelete: () -> Void
     @State private var isHovered = false
     @Environment(\.colorScheme) private var colorScheme
@@ -222,6 +280,10 @@ private struct FileRow: View {
             }
         }
         .contextMenu {
+            Button("Rename…") {
+                onRename()
+            }
+            Divider()
             Button("Delete", role: .destructive) {
                 onDelete()
             }
@@ -244,6 +306,52 @@ enum FolderPanel {
     }
 }
 
+enum RenamePanel {
+    @MainActor
+    static func chooseName(for file: FolderFile) -> String? {
+        let alert = NSAlert()
+        alert.messageText = "Rename File"
+        alert.informativeText = "Enter a new name for \(file.displayName)."
+        alert.addButton(withTitle: "Rename")
+        alert.addButton(withTitle: "Cancel")
+
+        let field = NSTextField(string: file.displayName)
+        field.frame = NSRect(x: 0, y: 0, width: 260, height: 24)
+        alert.accessoryView = field
+
+        return alert.runModal() == .alertFirstButtonReturn ? field.stringValue : nil
+    }
+}
+
+@MainActor
+func createMarkdownDocument(in folderState: FolderState, promptForFolder: Bool = false, tabbingInto sourceWindow: NSWindow? = nil) {
+    if folderState.folderURL == nil {
+        guard promptForFolder, let folder = FolderPanel.choose() else { return }
+        folderState.open(folder: folder)
+    }
+
+    do {
+        let url = try folderState.createUntitledFile()
+        openMarkdownDocument(at: url, from: folderState.folderURL, tabbingInto: sourceWindow)
+    } catch {
+        NSAlert(error: error).runModal()
+    }
+}
+
+func displayTitle(for url: URL?) -> String {
+    guard let url else { return "Untitled" }
+    return url.deletingPathExtension().lastPathComponent
+}
+
+@MainActor
+func setDocumentTitle(_ document: NSDocument?, for url: URL?) {
+    let title = displayTitle(for: url)
+    document?.displayName = title
+    document?.windowControllers.compactMap(\.window).forEach { window in
+        window.title = title
+    }
+}
+
 /// Opens a markdown file as a document window. When it came from a folder
 /// sidebar, stages that folder so the opened document's `ContentView` adopts
 /// it (folder mode, same folder) on appear.
@@ -258,6 +366,7 @@ func openMarkdownDocument(at url: URL, from folder: URL?, tabbingInto sourceWind
             NSAlert(error: error).runModal()
             return
         }
+        setDocumentTitle(document, for: url)
         guard let sourceWindow,
               sourceWindow.isVisible,
               let targetWindow = document?.windowControllers.compactMap(\.window).first,

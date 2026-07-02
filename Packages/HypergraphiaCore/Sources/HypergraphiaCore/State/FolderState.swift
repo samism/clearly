@@ -12,6 +12,23 @@ public struct FolderFile: Identifiable, Hashable {
     }
 }
 
+public enum FolderStateError: LocalizedError, Equatable {
+    case emptyFileName
+    case invalidFileName
+    case fileAlreadyExists(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .emptyFileName:
+            return "File name cannot be empty."
+        case .invalidFileName:
+            return "File name cannot contain path separators."
+        case .fileAlreadyExists(let name):
+            return "A file named \"\(name)\" already exists."
+        }
+    }
+}
+
 /// Per-window state for the sidebar's folder mode: the folder the window is
 /// oriented to and the markdown files inside it (top level only — no
 /// recursion). Watches the directory with a kqueue `DispatchSource` so files
@@ -82,6 +99,27 @@ public final class FolderState: ObservableObject {
             counter += 1
         }
         return folder.appendingPathComponent(name)
+    }
+
+    /// Rename target for a sidebar file. The UI asks for the extensionless
+    /// display name; if the user types a markdown extension anyway, preserve
+    /// the original file's extension instead of doubling it.
+    public static func renamedFileURL(for fileURL: URL, displayName rawName: String) throws -> URL {
+        let trimmed = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw FolderStateError.emptyFileName }
+        guard !trimmed.contains("/") && !trimmed.contains(":") else { throw FolderStateError.invalidFileName }
+
+        let typedExtension = (trimmed as NSString).pathExtension.lowercased()
+        let baseName = markdownExtensions.contains(typedExtension)
+            ? (trimmed as NSString).deletingPathExtension
+            : trimmed
+        guard !baseName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw FolderStateError.emptyFileName
+        }
+
+        let fileExtension = fileURL.pathExtension
+        let fileName = fileExtension.isEmpty ? baseName : "\(baseName).\(fileExtension)"
+        return fileURL.deletingLastPathComponent().appendingPathComponent(fileName)
     }
 
     /// Create an empty untitled markdown file in the open folder and return
