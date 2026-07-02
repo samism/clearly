@@ -84,6 +84,20 @@ public enum LiveEditSupport {
         return (s, e, expandedOriginal, s - 1)
     }
 
+    /// Plans the deletion behind a multi-block selection: everything after
+    /// the block being kept (`keepEnd` = its last line) through the end of
+    /// the last selected block, separators included. Returns nil when the
+    /// span is out of bounds.
+    public static func rangeDeletion(
+        in text: String, keepEnd: Int, deleteEnd: Int
+    ) -> (start: Int, end: Int, original: String)? {
+        let count = text.components(separatedBy: "\n").count
+        let start = keepEnd + 1
+        guard start >= 1, deleteEnd >= start, deleteEnd <= count,
+              let original = slice(text, lines: start...deleteEnd) else { return nil }
+        return (start, deleteEnd, original)
+    }
+
     /// Appends `block` to `text` as a new markdown block, inserting the blank
     /// line cmark needs to keep it separate from the previous block.
     public static func appendingBlock(_ block: String, to text: String) -> String {
@@ -115,6 +129,7 @@ public enum LiveEditSupport {
         var live = false;
         var pending = null;   // element awaiting a clearlyBeginEdit reply
         var active = null;    // {editor, textarea, original, start, end, isAppend, committed}
+        var clearNext = false; // empty the next opened editor (selection delete)
 
         function isTaskItem(el) {
             return el && el.tagName === 'LI'
@@ -181,6 +196,10 @@ public enum LiveEditSupport {
                 a.ta.readOnly = true;
                 if (a.isAppend) {
                     post({ type: 'appendBlock', text: value });
+                } else if (value.trim() === '') {
+                    // Committing an emptied block deletes it cleanly
+                    // (separator blank lines get swallowed too).
+                    post({ type: 'deleteBlock', start: a.start, end: a.end, original: a.original, reopen: false });
                 } else {
                     // `original` lets the native side verify the target lines
                     // still hold what this editor was opened on before splicing.
@@ -224,7 +243,7 @@ public enum LiveEditSupport {
                         a.committed = true;
                         a.ta.readOnly = true;
                         active = null;
-                        post({ type: 'deleteBlock', start: a.start, end: a.end, original: a.original });
+                        post({ type: 'deleteBlock', start: a.start, end: a.end, original: a.original, reopen: true });
                         // The reload triggered by the deletion replaces the
                         // DOM; the native side reopens the previous block.
                     }
@@ -280,6 +299,14 @@ public enum LiveEditSupport {
             built.ta.focus();
             var len = built.ta.value.length;
             built.ta.setSelectionRange(len, len);
+            if (clearNext) {
+                // Selection delete: this block survives, but cleared. The
+                // original stays intact so the commit/delete paths verify
+                // against the real source.
+                clearNext = false;
+                built.ta.value = '';
+                autogrow(built.ta);
+            }
         };
 
         window.clearlyBeginAppend = function() {
@@ -298,7 +325,7 @@ public enum LiveEditSupport {
         // Opens the editor for the deepest editable block that starts at or
         // nearest above the given source line (used after deleting a block to
         // land the caret in its predecessor).
-        function editBlockAtOrAbove(line) {
+        function editBlockAtOrAbove(line, clear) {
             var best = null;
             var bestLine = -1;
             document.querySelectorAll('.live-block').forEach(function(el) {
@@ -311,13 +338,52 @@ public enum LiveEditSupport {
                 }
             });
             if (!best) return;
+            clearNext = !!clear;
             pending = { el: best };
             post({ type: 'requestEdit', sourcepos: best.getAttribute('data-sourcepos') });
         }
 
-        window.clearlyEditBlockAtLine = function(line) {
-            if (live) editBlockAtOrAbove(line);
+        window.clearlyEditBlockAtLine = function(line, clear) {
+            if (live) editBlockAtOrAbove(line, clear);
         };
+
+        // Backspace/Delete over a selection: every touched block is deleted
+        // except the first, which reopens cleared — the multi-block analogue
+        // of select-all + delete in a conventional editor.
+        document.addEventListener('keydown', function(e) {
+            if (!live || active) return;
+            if (e.key !== 'Backspace' && e.key !== 'Delete') return;
+            if (e.target.closest && e.target.closest('.live-editor, input, textarea')) return;
+            var sel = window.getSelection();
+            if (!sel || sel.isCollapsed || sel.rangeCount === 0) return;
+            var range = sel.getRangeAt(0);
+            // Pick the span by source lines, not DOM order: the footnote
+            // section renders at the end of the DOM but its sourcepos points
+            // mid-document.
+            var first = null, last = null, firstLine = Infinity, lastLine = -1;
+            document.querySelectorAll('.live-block').forEach(function(el) {
+                if (!range.intersectsNode(el)) return;
+                var m = /^(\\d+):\\d+-(\\d+):(\\d+)$/.exec(el.getAttribute('data-sourcepos') || '');
+                if (!m) return;
+                var start = parseInt(m[1], 10);
+                var end = parseInt(m[2], 10) - (m[3] === '0' ? 1 : 0);
+                if (start < firstLine) { firstLine = start; first = el; }
+                if (end > lastLine) { lastLine = end; last = el; }
+            });
+            if (!first) return;
+            e.preventDefault();
+            e.stopPropagation();
+            sel.removeAllRanges();
+            if (first === last) {
+                clearNext = true;
+                pending = { el: first };
+                post({ type: 'requestEdit', sourcepos: first.getAttribute('data-sourcepos') });
+            } else {
+                post({ type: 'deleteBlockRange',
+                       first: first.getAttribute('data-sourcepos'),
+                       last: last.getAttribute('data-sourcepos') });
+            }
+        });
 
         window.clearlySetLiveMode = function(on) {
             live = !!on;
@@ -417,6 +483,7 @@ public enum LiveEditSupport {
             if (block) {
                 e.preventDefault();
                 e.stopPropagation();
+                clearNext = false;
                 pending = { el: block };
                 post({ type: 'requestEdit', sourcepos: block.getAttribute('data-sourcepos') });
                 return;

@@ -167,6 +167,62 @@ struct LiveEditDeleteTests {
     }
 }
 
+@Suite("LiveEditSupport range deletion")
+struct LiveEditRangeDeleteTests {
+    // Lines:            1      2  3      4  5      6  7
+    let doc = "first\n\nsecond\n\nthird\n\nfourth"
+
+    @Test func deletesEverythingAfterKeptBlock() {
+        // Selection spanned blocks 1-3: keep `first` (ends line 1), delete
+        // through the end of `third` (line 5), separators included.
+        let plan = LiveEditSupport.rangeDeletion(in: doc, keepEnd: 1, deleteEnd: 5)
+        #expect(plan?.start == 2 && plan?.end == 5)
+        #expect(plan?.original == "\nsecond\n\nthird")
+        let text = LiveEditSupport.applyingEdit(
+            to: doc, start: plan!.start, end: plan!.end, original: plan!.original, replacement: ""
+        )
+        #expect(text == "first\n\nfourth")
+    }
+
+    @Test func selectAllKeepsFirstBlockOnly() {
+        let plan = LiveEditSupport.rangeDeletion(in: doc, keepEnd: 1, deleteEnd: 7)
+        #expect(plan?.start == 2 && plan?.end == 7)
+        let text = LiveEditSupport.applyingEdit(
+            to: doc, start: plan!.start, end: plan!.end, original: plan!.original, replacement: ""
+        )
+        #expect(text == "first")
+    }
+
+    @Test func midDocumentSpan() {
+        // Keep `second` (ends line 3), delete through `third` (line 5); the
+        // separator before `fourth` survives so blocks stay separated.
+        let plan = LiveEditSupport.rangeDeletion(in: doc, keepEnd: 3, deleteEnd: 5)
+        let text = LiveEditSupport.applyingEdit(
+            to: doc, start: plan!.start, end: plan!.end, original: plan!.original, replacement: ""
+        )
+        #expect(text == "first\n\nsecond\n\nfourth")
+        #expect(text?.contains("\n\n\n") == false)
+    }
+
+    @Test func adjacentBlocksWithoutSeparators() {
+        let tasks = "- [x] one\n- [ ] two\n- [ ] three"
+        let plan = LiveEditSupport.rangeDeletion(in: tasks, keepEnd: 1, deleteEnd: 3)
+        let text = LiveEditSupport.applyingEdit(
+            to: tasks, start: plan!.start, end: plan!.end, original: plan!.original, replacement: ""
+        )
+        #expect(text == "- [x] one")
+    }
+
+    @Test func invalidSpansReturnNil() {
+        // deleteEnd before the first deletable line.
+        #expect(LiveEditSupport.rangeDeletion(in: doc, keepEnd: 3, deleteEnd: 3) == nil)
+        // Past the end of the document.
+        #expect(LiveEditSupport.rangeDeletion(in: doc, keepEnd: 1, deleteEnd: 8) == nil)
+        // keepEnd of 0 would mean "keep nothing" — start line must be >= 1.
+        #expect(LiveEditSupport.rangeDeletion(in: doc, keepEnd: -1, deleteEnd: 3) == nil)
+    }
+}
+
 @Suite("LiveEditSupport block appending")
 struct LiveEditAppendTests {
     @Test func emptyDocument() {
@@ -197,5 +253,6 @@ struct LiveEditScriptTests {
         #expect(script.contains("requestEdit"))
         #expect(script.contains("commitEdit"))
         #expect(script.contains("appendBlock"))
+        #expect(script.contains("deleteBlockRange"))
     }
 }
