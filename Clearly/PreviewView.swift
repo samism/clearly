@@ -377,6 +377,9 @@ struct PreviewView: NSViewRepresentable {
         /// Whether the reopened editor starts cleared (selection delete keeps
         /// one block, emptied).
         var pendingLiveEditClear = false
+        /// Whether the reopened editor's caret lands at the start (arrow-key
+        /// travel into the next block) instead of the end.
+        var pendingLiveEditCaretStart = false
         var skipNextReload = false
         var isLoadingContent = false
         var pendingScrollLine: Int?
@@ -731,10 +734,12 @@ struct PreviewView: NSViewRepresentable {
             }
             if let line = pendingLiveEditLine {
                 let clear = pendingLiveEditClear
+                let caretStart = pendingLiveEditCaretStart
                 pendingLiveEditLine = nil
                 pendingLiveEditClear = false
+                pendingLiveEditCaretStart = false
                 if lastMode == .live {
-                    webView.evaluateJavaScript("window.clearlyEditBlockAtLine && window.clearlyEditBlockAtLine(\(line), \(clear))")
+                    webView.evaluateJavaScript("window.clearlyEditBlockAtLine && window.clearlyEditBlockAtLine(\(line), \(clear), \(caretStart))")
                 }
             }
             // Restore scroll position after HTML reload
@@ -830,6 +835,18 @@ struct PreviewView: NSViewRepresentable {
                           let end = body["end"] as? Int,
                           let text = body["text"] as? String,
                           let original = body["original"] as? String else { return }
+                    // Arrow-key travel: after the commit's reload, reopen the
+                    // neighboring block. Only arm the reopen when the commit
+                    // will actually apply — a dropped stale commit must not
+                    // leave a reopen pending for some unrelated later reload.
+                    if let reopenLine = body["reopenLine"] as? Int,
+                       LiveEditSupport.applyingEdit(
+                           to: renderedMarkdown, start: start, end: end, original: original, replacement: text
+                       ) != nil {
+                        pendingLiveEditLine = reopenLine
+                        pendingLiveEditClear = false
+                        pendingLiveEditCaretStart = body["reopenCaretStart"] as? Bool ?? false
+                    }
                     DispatchQueue.main.async { [weak self] in
                         self?.onLiveEdit?(start, end, original, text)
                     }
@@ -845,10 +862,19 @@ struct PreviewView: NSViewRepresentable {
                           let deletion = LiveEditSupport.blockDeletion(
                               in: renderedMarkdown, start: start, end: end, original: original
                           ) else { return }
-                    let reopen = body["reopen"] as? Bool ?? true
-                    if reopen, deletion.previousLine > 0 {
+                    // reopen: true/"prev" lands in the previous block (caret
+                    // at its end), "next" in the following one (caret at its
+                    // start — the deleted lines' start is where it now sits),
+                    // false reopens nothing.
+                    let reopen = (body["reopen"] as? String) ?? ((body["reopen"] as? Bool ?? true) ? "prev" : "")
+                    if reopen == "prev", deletion.previousLine > 0 {
                         pendingLiveEditLine = deletion.previousLine
                         pendingLiveEditClear = false
+                        pendingLiveEditCaretStart = false
+                    } else if reopen == "next" {
+                        pendingLiveEditLine = deletion.start
+                        pendingLiveEditClear = false
+                        pendingLiveEditCaretStart = true
                     }
                     DispatchQueue.main.async { [weak self] in
                         self?.onLiveEdit?(deletion.start, deletion.end, deletion.original, "")
