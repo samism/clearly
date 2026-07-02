@@ -9,7 +9,7 @@ enum SidebarMode {
     case folder
 }
 
-/// Left sidebar container: FILES / OUTLINES mode toggle in the header, then
+/// Left sidebar container: FILES / OUTLINE mode toggle in the header, then
 /// either the document outline or the folder file list.
 struct SidebarView: View {
     @Binding var mode: SidebarMode
@@ -43,7 +43,7 @@ struct SidebarView: View {
         HStack(spacing: 8) {
             HStack(spacing: 2) {
                 modeTab("FILES", systemImage: "doc.text", .folder)
-                modeTab("OUTLINES", systemImage: "list.bullet.indent", .outline)
+                modeTab("OUTLINE", systemImage: "list.bullet.indent", .outline)
             }
             .padding(3)
             .background(
