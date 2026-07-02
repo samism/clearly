@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
+import ObjectiveC.runtime
 import KeyboardShortcuts
 import HypergraphiaCore
 #if canImport(Sparkle)
@@ -40,6 +41,7 @@ final class HypergraphiaAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         NSWindow.allowsAutomaticWindowTabbing = false
+        MarkdownWindowTitleInstaller.install()
 
         // Avoid Dock-icon flash when the user launches with the toggle on.
         // The `didBecomeMain` observer flips us back to `.regular` once a
@@ -372,6 +374,43 @@ final class HypergraphiaAppDelegate: NSObject, NSApplicationDelegate {
             return true
         }
         return true
+    }
+}
+
+private enum MarkdownWindowTitleInstaller {
+    private static var didInstall = false
+
+    static func install() {
+        guard !didInstall,
+              let original = class_getInstanceMethod(
+                NSWindowController.self,
+                #selector(NSWindowController.windowTitle(forDocumentDisplayName:))
+              ),
+              let replacement = class_getInstanceMethod(
+                NSWindowController.self,
+                #selector(NSWindowController.hypergraphia_windowTitle(forDocumentDisplayName:))
+              ) else { return }
+
+        didInstall = true
+        method_exchangeImplementations(original, replacement)
+    }
+}
+
+private extension NSWindowController {
+    @objc func hypergraphia_windowTitle(forDocumentDisplayName displayName: String) -> String {
+        hypergraphia_windowTitle(forDocumentDisplayName: displayName).strippingMarkdownExtensionForWindowTitle
+    }
+}
+
+private extension String {
+    var strippingMarkdownExtensionForWindowTitle: String {
+        let path = self as NSString
+        switch path.pathExtension.lowercased() {
+        case "md", "markdown", "mdx":
+            return path.deletingPathExtension
+        default:
+            return self
+        }
     }
 }
 
