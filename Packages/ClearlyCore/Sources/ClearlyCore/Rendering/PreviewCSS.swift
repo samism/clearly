@@ -769,11 +769,15 @@ public enum PreviewCSS {
         li > input[type="checkbox"] {
             -webkit-appearance: none;
             appearance: none;
-            width: 1.2em;
-            height: 1.2em;
+            /* Form controls don't inherit font; without this, WebKit resolves
+               the em/lh units below against the ~13px UA control font and the
+               circle renders small and rides high of the text. */
+            font: inherit;
+            width: 1.15em;
+            height: 1.15em;
             margin: 0;
-            /* Center the circle on the first text line: (line-height − circle) / 2. */
-            margin-top: calc((1.45em - 1.2em) / 2);
+            /* Center the circle on the first text line: (line box − circle) / 2. */
+            margin-top: calc((1lh - 1.15em) / 2);
             flex-shrink: 0;
             border: 1.5px solid color-mix(in srgb, var(--c-text) 30%, transparent);
             border-radius: 50%;
