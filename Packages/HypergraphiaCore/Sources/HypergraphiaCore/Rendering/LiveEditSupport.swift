@@ -730,6 +730,17 @@ public enum LiveEditSupport {
                 built.wrap.classList.add('live-' + el.tagName.toLowerCase());
             }
             if (el.tagName === 'LI') {
+                // Where the item's rendered TEXT begins, relative to the
+                // li's content origin. Normal bullets hang their marker in
+                // the list gutter, so text starts at the origin itself; task
+                // items are flex rows whose text starts after the styled
+                // checkbox and gap. Measured before the content detaches.
+                var textOffset = 0;
+                var cb = el.querySelector(':scope > input[type="checkbox"]');
+                if (cb) {
+                    textOffset = (cb.getBoundingClientRect().right - el.getBoundingClientRect().left)
+                        + (parseFloat(getComputedStyle(el).columnGap) || 0);
+                }
                 // List items edit in place, one line at a time: only the
                 // item's own-line content swaps for the editor; nested
                 // sublists stay rendered inside the item.
@@ -760,8 +771,9 @@ public enum LiveEditSupport {
                     document.body.appendChild(probe);
                     var prefixWidth = probe.getBoundingClientRect().width;
                     probe.remove();
-                    built.wrap.style.marginLeft = (-prefixWidth) + 'px';
-                    built.wrap.style.width = 'calc(100% + ' + prefixWidth + 'px)';
+                    var shift = prefixWidth - textOffset;
+                    built.wrap.style.marginLeft = (-shift) + 'px';
+                    built.wrap.style.width = 'calc(100% + ' + shift + 'px)';
                 }
                 active = { wrap: built.wrap, ta: built.ta, original: source, originalEl: null,
                            liHost: el, liKept: kept,
