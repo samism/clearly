@@ -260,8 +260,12 @@ struct ContentView: View {
         }
         .overlay(alignment: .topLeading) {
             if #available(macOS 26.0, *) {
+                // Right-justified against the sidebar panel's trailing edge
+                // (12pt inset) so it doesn't crowd the traffic lights; with
+                // the sidebar hidden it returns beside the lights, clear of
+                // the tab strip's leading inset.
                 sidebarToggle
-                    .padding(.leading, 90)
+                    .padding(.leading, outlineState.isVisible ? 208 : 90)
                     .padding(.top, 13)
                     .ignoresSafeArea(.container, edges: .top)
             }
@@ -303,7 +307,9 @@ struct ContentView: View {
     /// bakes it in at load) never goes stale.
     private var contentTopInset: CGFloat {
         if #available(macOS 26.0, *) {
-            return 48
+            // 48pt strip band + 8pt breathing room below its divider,
+            // matching the sidebar's gap between its rule and folder row.
+            return 56
         }
         return 0
     }
