@@ -105,6 +105,22 @@ struct PreviewView: NSViewRepresentable {
             object: nil
         )
 
+        // Clicks on app chrome (sidebar, tab strip, find bar) never reach the
+        // page and don't move first responder off the web view, so a live-
+        // mode block editor would silently stay open. Watch for clicks in
+        // this window that land outside the web view and close it explicitly.
+        context.coordinator.chromeClickMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown]
+        ) { [weak webView] event in
+            if let webView, let window = webView.window, event.window === window {
+                let point = webView.convert(event.locationInWindow, from: nil)
+                if !webView.bounds.contains(point) {
+                    webView.evaluateJavaScript("window.clearlyCloseActiveEditor && window.clearlyCloseActiveEditor();")
+                }
+            }
+            return event
+        }
+
         loadHTML(in: webView, context: context)
         return webView
     }
@@ -166,6 +182,10 @@ struct PreviewView: NSViewRepresentable {
 
     static func dismantleNSView(_ webView: WKWebView, coordinator: Coordinator) {
         NotificationCenter.default.removeObserver(coordinator)
+        if let monitor = coordinator.chromeClickMonitor {
+            NSEvent.removeMonitor(monitor)
+            coordinator.chromeClickMonitor = nil
+        }
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "linkClicked")
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "scrollSync")
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "copyToClipboard")
@@ -381,6 +401,9 @@ struct PreviewView: NSViewRepresentable {
         /// travel into the next block) instead of the end.
         var pendingLiveEditCaretStart = false
         var skipNextReload = false
+        /// NSEvent local monitor closing the live-mode block editor when a
+        /// click lands on app chrome outside the web view.
+        var chromeClickMonitor: Any?
         var isLoadingContent = false
         var pendingScrollLine: Int?
         var pendingHighlightText: String?
