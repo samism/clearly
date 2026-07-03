@@ -308,14 +308,9 @@ struct PreviewView: NSViewRepresentable {
             usedHeadingIDs.add(candidate);
             return candidate;
         }
+        // IDs only (TOC links target them) — no hover anchor affordance.
         document.querySelectorAll('h1,h2,h3,h4,h5,h6').forEach(function(h) {
             h.id = uniqueHeadingID(h.id || h.textContent.trim(), !h.id);
-            var link = document.createElement('a');
-            link.className = 'heading-anchor';
-            link.href = '#' + h.id;
-            link.textContent = '#';
-            link.addEventListener('click', function(e) { e.stopPropagation(); });
-            h.prepend(link);
         });
         // Task list checkbox toggle
         document.querySelectorAll('input[type="checkbox"]').forEach(function(cb) {
@@ -491,7 +486,6 @@ struct PreviewView: NSViewRepresentable {
                     document.querySelectorAll('mark.clearly-outline-flash').forEach(unwrapFlash);
                     var nodes = [];
                     el.childNodes.forEach(function(n) {
-                        if (n.nodeType === 1 && n.classList && n.classList.contains('heading-anchor')) return;
                         nodes.push(n);
                     });
                     if (nodes.length === 0) return;
@@ -520,7 +514,6 @@ struct PreviewView: NSViewRepresentable {
                 var best = null, bestDist = Infinity;
                 function headingText(el) {
                     var copy = el.cloneNode(true);
-                    copy.querySelectorAll('.heading-anchor').forEach(function(a) { a.remove(); });
                     return copy.textContent.trim().toLowerCase();
                 }
                 for (var i = 0; i < headings.length; i++) {

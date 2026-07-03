@@ -152,7 +152,14 @@ public enum LiveEditSupport {
     /// - `{type: "requestAppend"}` — user clicked below the last block; native
     ///   side replies with `window.clearlyBeginAppend()`.
     /// - `{type: "commitEdit", start, end, text}` — replace source lines.
+    ///   Optional `insertAfter` asks the native side to reopen a new-block
+    ///   insert editor below that line after the reload.
     /// - `{type: "appendBlock", text}` — append a new block to the document.
+    ///   Optional `reopenAppend` reopens the append editor after the reload.
+    /// - `{type: "insertBlock", afterLine, text}` — insert a new block after
+    ///   a source line. Optional `reopenInsert` chains another insert editor.
+    /// - `{type: "editingState", active}` — a block editor opened or closed
+    ///   (native chrome reacts, e.g. hiding the tab strip).
     ///
     /// Native side toggles the mode with `window.clearlySetLiveMode(bool)`.
     public static let scriptHTML = """
@@ -172,20 +179,15 @@ public enum LiveEditSupport {
             docSource = (typeof s === 'string') ? s : null;
         };
 
-        function isTaskItem(el) {
-            return el && el.tagName === 'LI'
-                && el.hasAttribute('data-sourcepos')
-                && el.querySelector(':scope > input[type="checkbox"]') !== null;
-        }
-
         function markBlocks() {
             document.querySelectorAll('[data-sourcepos]').forEach(function(el) {
                 if (el.parentElement && el.parentElement.closest('[data-sourcepos]')) return;
-                // Checklist items are line-scoped: each item is its own
-                // block, not the surrounding list.
-                if (el.tagName === 'UL' && el.querySelector(':scope > li > input[type="checkbox"]')) {
+                // List items are line-scoped: each item is its own block,
+                // not the surrounding list — checkboxes, bullets, and
+                // numbered items alike.
+                if (el.tagName === 'UL' || el.tagName === 'OL') {
                     el.querySelectorAll('li').forEach(function(li) {
-                        if (isTaskItem(li)) li.classList.add('live-block');
+                        if (li.hasAttribute('data-sourcepos')) li.classList.add('live-block');
                     });
                     return;
                 }
@@ -440,8 +442,8 @@ public enum LiveEditSupport {
             notifyEditing();
         }
 
-        // Enter on a heading or checklist block finishes it and opens a
-        // fresh empty block editor right below it, Apple Notes-style.
+        // Enter on a heading, blockquote, or list item finishes it and opens
+        // a fresh empty block editor right below it, Apple Notes-style.
         function finishAndInsertAfter(a) {
             var value = a.ta.value;
             if (value.trim() === '') return;
@@ -559,14 +561,16 @@ public enum LiveEditSupport {
                     expandActive(a, true, true);
                     expandActive(a, false, true);
                 }
-                // Enter on a heading or checklist block finishes it and
-                // opens a fresh block below (only while the editor holds a
-                // single block — absorbed neighbors edit as plain text).
+                // Enter on a heading, blockquote, or list item (checkbox,
+                // bullet, or numbered) finishes it and opens a fresh block
+                // below (only while the editor holds a single block —
+                // absorbed neighbors edit as plain text).
                 if (e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey
                     && !e.isComposing && !a.above.length && !a.below.length && active === a) {
                     var firstLine = ta.value.split('\\n', 1)[0];
                     if (/^\\s{0,3}#{1,6}\\s/.test(firstLine)
-                        || /^\\s*(?:[-*+]|\\d+[.)])\\s+\\[[ xX]\\]/.test(firstLine)) {
+                        || /^\\s{0,3}>/.test(firstLine)
+                        || /^\\s*(?:[-*+]|\\d+[.)])\\s/.test(firstLine)) {
                         e.preventDefault();
                         e.stopPropagation();
                         finishAndInsertAfter(a);
@@ -924,7 +928,7 @@ public enum LiveEditSupport {
             // quietly; an edited one stays — committing here could shift
             // source lines under the control's own message (e.g. a checkbox
             // toggle posting a line number read from the pre-commit DOM).
-            if (e.target.closest('input, button, summary, th, .code-copy-btn, .code-fold-btn, .table-copy-btn, .heading-anchor, .mermaid-zoom-icon, .live-img-zoom, .lightbox-overlay, .footnote-popover, .live-editor')) {
+            if (e.target.closest('input, button, summary, th, .code-copy-btn, .code-fold-btn, .table-copy-btn, .mermaid-zoom-icon, .live-img-zoom, .lightbox-overlay, .footnote-popover, .live-editor')) {
                 if (active && !active.committed
                     && (active.isAppend ? active.ta.value.trim() === '' : active.ta.value === active.original)) {
                     closeActive(false);
@@ -940,11 +944,16 @@ public enum LiveEditSupport {
             }
 
             var block = e.target.closest('[data-sourcepos]');
-            // Checklist items edit individually; everything else edits at
-            // the outermost block.
-            if (!isTaskItem(block)) {
-                while (block && block.parentElement && block.parentElement.closest('[data-sourcepos]')) {
-                    block = block.parentElement.closest('[data-sourcepos]');
+            if (block) {
+                // List items edit individually — the innermost item under
+                // the click; everything else edits at the outermost block.
+                var item = block.closest('li[data-sourcepos]');
+                if (item) {
+                    block = item;
+                } else {
+                    while (block && block.parentElement && block.parentElement.closest('[data-sourcepos]')) {
+                        block = block.parentElement.closest('[data-sourcepos]');
+                    }
                 }
             }
             if (block) {

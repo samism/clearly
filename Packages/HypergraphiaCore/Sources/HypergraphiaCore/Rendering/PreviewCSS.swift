@@ -354,7 +354,6 @@ public enum PreviewCSS {
             padding: 0 !important;
         }
         details.callout > summary::before { content: "" !important; }
-        .heading-anchor { display: none !important; }
         .lightbox-overlay { display: none !important; }
         .mermaid-lightbox { display: none !important; }
         .mermaid-zoom-icon { display: none !important; }
@@ -1155,22 +1154,6 @@ public enum PreviewCSS {
             color: var(--c-link);
         }
 
-        /* Heading anchor links */
-        .heading-anchor {
-            position: absolute;
-            left: -1.2em;
-            opacity: 0;
-            text-decoration: none;
-            color: var(--c-anchor);
-            font-weight: 400;
-            transition: opacity 0.15s ease;
-        }
-        h1:hover .heading-anchor, h2:hover .heading-anchor, h3:hover .heading-anchor,
-        h4:hover .heading-anchor, h5:hover .heading-anchor, h6:hover .heading-anchor {
-            opacity: 0.4;
-        }
-        .heading-anchor:hover { opacity: 1 !important; }
-
         /* Collapsible details animation */
         details::details-content {
             transition: block-size 0.3s ease, opacity 0.3s ease, content-visibility 0.3s ease allow-discrete;
@@ -1426,8 +1409,7 @@ public enum PreviewCSS {
             }
             .wiki-link, .wiki-link-broken { border-bottom: none !important; }
             details.callout > summary::before { content: "" !important; }
-            .heading-anchor { display: none !important; }
-            .lightbox-overlay { display: none !important; }
+                .lightbox-overlay { display: none !important; }
             .mermaid-lightbox { display: none !important; }
             .mermaid-zoom-icon { display: none !important; }
             .mermaid-wrapper .mermaid,
