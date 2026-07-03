@@ -29,6 +29,16 @@ struct ContentView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isHoveringBottom: Bool = false
 
+    /// A live-mode block editor is open: the tab strip hides (hover the top
+    /// band to peek at it). Debounced off so commit→reload→reopen chains
+    /// don't flash the strip between two editors.
+    @State private var isBlockEditing: Bool = false
+    @State private var isHoveringTabBand: Bool = false
+    @State private var editingClearWork: DispatchWorkItem?
+    /// Scrolling the content also tucks the strip away; hovering the top
+    /// band clears the latch so the strip stays once revealed.
+    @State private var isScrollHidden: Bool = false
+
     /// Stable per-window key for ScrollBridge / SelectionBridge. Re-keyed on
     /// document URL change so two windows on different files don't collide.
     @State private var positionSyncID: String = UUID().uuidString
@@ -142,29 +152,19 @@ struct ContentView: View {
             }
 
             VStack(spacing: 0) {
-                if #available(macOS 26.0, *), tabsShowing {
-                    // Tabs live in the traffic-light band (Safari-style);
-                    // the strip's divider lines up with the sidebar's
-                    // top-strip separator. With the sidebar hidden, the
-                    // leading inset keeps tabs clear of the floating
-                    // traffic lights and toggle.
-                    EditorTabStrip(
-                        model: tabModel,
-                        leadingInset: outlineState.isVisible ? 0 : 122
-                    ) {
-                        newFile(tabbingInto: tabModel.window)
+                if findState.isVisible || jumpToLineState.isVisible {
+                    // Clear of the tab strip's overlay region at the top.
+                    VStack(spacing: 0) {
+                        if findState.isVisible {
+                            FindBarView(findState: findState)
+                            Divider()
+                        }
+                        if jumpToLineState.isVisible {
+                            JumpToLineBar(state: jumpToLineState)
+                            Divider()
+                        }
                     }
-                    .padding(.top, 7)
-                    .padding(.bottom, 7)
-                    Divider()
-                }
-                if findState.isVisible {
-                    FindBarView(findState: findState)
-                    Divider()
-                }
-                if jumpToLineState.isVisible {
-                    JumpToLineBar(state: jumpToLineState)
-                    Divider()
+                    .padding(.top, contentTopInset)
                 }
 
                 mainPane
@@ -178,6 +178,47 @@ struct ContentView: View {
             // With the sidebar open the lights sit over the panel, so the
             // editor content rises to the window top.
             .padding(.top, (tabsShowing || outlineState.isVisible) ? 0 : topInset)
+            .overlay(alignment: .top) {
+                if #available(macOS 26.0, *), tabsShowing {
+                    // Hover zone summoning the hidden tab strip. Hit-test
+                    // transparent, so it never steals clicks from the tabs
+                    // (or from content underneath).
+                    BottomHoverTracker { hovering in
+                        withAnimation(tabStripAnimation) {
+                            isHoveringTabBand = hovering
+                            // Reaching for the strip un-latches the scroll
+                            // hide, so it stays put after the mouse moves on.
+                            if hovering {
+                                isScrollHidden = false
+                            }
+                        }
+                    }
+                    .frame(height: 48)
+                }
+            }
+            .overlay(alignment: .top) {
+                if #available(macOS 26.0, *), tabsShowing, stripRevealed {
+                    // The tab strip floats over the content (which carries a
+                    // constant matching top inset), so peeking in and out
+                    // never reflows the document. Tabs sit in the traffic-
+                    // light band, Safari-style; with the sidebar hidden the
+                    // leading inset clears the floating lights and toggle.
+                    EditorTabStrip(
+                        model: tabModel,
+                        leadingInset: outlineState.isVisible ? 0 : 122
+                    ) {
+                        newFile(tabbingInto: tabModel.window)
+                    }
+                    .padding(.top, 7)
+                    .padding(.bottom, 6)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Theme.backgroundColorSwiftUI)
+                    .overlay(alignment: .bottom) {
+                        Divider()
+                    }
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                }
+            }
         }
         // Match the editor background so the gutters around the floating
         // glass sidebar read as one continuous surface, not window chrome.
@@ -223,6 +264,31 @@ struct ContentView: View {
             return !tabModel.tabs.isEmpty
         }
         return false
+    }
+
+    /// Whether the tab strip is currently shown (its band collapses to zero
+    /// height otherwise, extending the content to the window's top border).
+    private var stripRevealed: Bool {
+        (!isBlockEditing && !isScrollHidden) || isHoveringTabBand
+    }
+
+    /// Hide/reveal animation for the tab strip band and everything that
+    /// reflows with it.
+    private var tabStripAnimation: Animation? {
+        reduceMotion ? nil : .spring(response: 0.25, dampingFraction: 0.9)
+    }
+
+    /// Constant top inset baked into the content under the glass chrome:
+    /// the tab strip overlays this region, so peeking in/out never moves
+    /// the document, while mid-scroll text still reaches the window's top
+    /// border (insets only pad the document's start). Availability-based
+    /// rather than tab-count-based so the preview's HTML template (which
+    /// bakes it in at load) never goes stale.
+    private var contentTopInset: CGFloat {
+        if #available(macOS 26.0, *) {
+            return 48
+        }
+        return 0
     }
 
     /// Claude-desktop-style toggle that lives next to the traffic lights —
@@ -334,6 +400,7 @@ struct ContentView: View {
                 positionSyncID: positionSyncID,
                 findState: findState,
                 outlineState: outlineState,
+                extraTopInset: contentTopInset,
                 extraBottomInset: BottomToolbar.pillHeight + 24,
                 jumpToLineState: jumpToLineState,
                 statusBarState: statusBarState,
@@ -357,10 +424,26 @@ struct ContentView: View {
                 onLiveEdit: { start, end, original, text in
                     applyLiveEdit(start: start, end: end, original: original, text: text)
                 },
+                onLiveInsert: { afterLine, text in
+                    if let updated = LiveEditSupport.insertingBlock(text, after: afterLine, in: document.text) {
+                        document.text = updated
+                    }
+                },
+                onLiveEditingChanged: { editing in
+                    setBlockEditing(editing)
+                },
+                onUserScroll: {
+                    if !isScrollHidden {
+                        withAnimation(tabStripAnimation) {
+                            isScrollHidden = true
+                        }
+                    }
+                },
                 onLiveAppend: { text in
                     document.text = LiveEditSupport.appendingBlock(text, to: document.text)
                 },
-                contentWidthEm: contentWidthEm
+                contentWidthEm: contentWidthEm,
+                extraTopInset: contentTopInset
             )
             .opacity(showsRenderedPane ? 1 : 0)
             .allowsHitTesting(showsRenderedPane)
@@ -379,6 +462,27 @@ struct ContentView: View {
         guard let updated = LiveEditSupport.applyingEdit(to: document.text, start: start, end: end, original: original, replacement: text) else { return }
         guard updated != document.text else { return }
         document.text = updated
+    }
+
+    /// Debounced editing-state sink: "off" waits a beat so commit → reload →
+    /// reopen chains (Enter on a heading, arrow-key travel) don't flash the
+    /// tab strip between two editors.
+    private func setBlockEditing(_ editing: Bool) {
+        editingClearWork?.cancel()
+        editingClearWork = nil
+        if editing {
+            withAnimation(tabStripAnimation) {
+                isBlockEditing = true
+            }
+        } else {
+            let work = DispatchWorkItem {
+                withAnimation(tabStripAnimation) {
+                    isBlockEditing = false
+                }
+            }
+            editingClearWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: work)
+        }
     }
 
     /// Toggle the `[ ]` / `[x]` on the source line that produced this rendered

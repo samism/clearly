@@ -34,6 +34,12 @@ struct PreviewView: NSViewRepresentable {
     /// new text. The third argument carries the original slice the editor was
     /// opened on, so the receiver can drop stale commits.
     var onLiveEdit: ((Int, Int, String, String) -> Void)?
+    /// New block inserted after a source line (Enter on a heading/checklist).
+    var onLiveInsert: ((Int, String) -> Void)?
+    /// A live-mode block editor opened (true) or closed (false).
+    var onLiveEditingChanged: ((Bool) -> Void)?
+    /// The user scrolled the content area (wheel/trackpad event).
+    var onUserScroll: (() -> Void)?
     /// Live mode: append a new block to the end of the document.
     var onLiveAppend: ((String) -> Void)?
     var contentWidthEm: CGFloat? = nil
@@ -79,6 +85,9 @@ struct PreviewView: NSViewRepresentable {
         context.coordinator.onTaskToggle = onTaskToggle
         context.coordinator.onLiveEdit = onLiveEdit
         context.coordinator.onLiveAppend = onLiveAppend
+        context.coordinator.onLiveInsert = onLiveInsert
+        context.coordinator.onLiveEditingChanged = onLiveEditingChanged
+        context.coordinator.onUserScroll = onUserScroll
         let coordinator = context.coordinator
         findState?.previewNavigateToNext = { [weak coordinator] in
             coordinator?.navigateToNextMatch()
@@ -109,12 +118,21 @@ struct PreviewView: NSViewRepresentable {
         // page and don't move first responder off the web view, so a live-
         // mode block editor would silently stay open. Watch for clicks in
         // this window that land outside the web view and close it explicitly.
+        // Scroll-wheel events over the content area (the editor shares the
+        // web view's frame) also report up so the tab strip can auto-hide;
+        // being real NSEvents, programmatic scroll restores never trigger it.
+        let monitorCoordinator = context.coordinator
         context.coordinator.chromeClickMonitor = NSEvent.addLocalMonitorForEvents(
-            matching: [.leftMouseDown, .rightMouseDown]
-        ) { [weak webView] event in
+            matching: [.leftMouseDown, .rightMouseDown, .scrollWheel]
+        ) { [weak webView, weak monitorCoordinator] event in
             if let webView, let window = webView.window, event.window === window {
                 let point = webView.convert(event.locationInWindow, from: nil)
-                if !webView.bounds.contains(point) {
+                let inside = webView.bounds.contains(point)
+                if event.type == .scrollWheel {
+                    if inside {
+                        monitorCoordinator?.onUserScroll?()
+                    }
+                } else if !inside {
                     webView.evaluateJavaScript("window.clearlyCloseActiveEditor && window.clearlyCloseActiveEditor();")
                 }
             }
@@ -388,6 +406,13 @@ struct PreviewView: NSViewRepresentable {
         var onTaskToggle: ((Int, Bool) -> Void)?
         var onLiveEdit: ((Int, Int, String, String) -> Void)?
         var onLiveAppend: ((String) -> Void)?
+        var onLiveInsert: ((Int, String) -> Void)?
+        var onLiveEditingChanged: ((Bool) -> Void)?
+        var onUserScroll: (() -> Void)?
+        /// After the next reload, open a new-block insert editor below this line.
+        var pendingLiveEditInsertAfter: Int?
+        /// After the next reload, reopen the append editor (Enter chained a new block at the end).
+        var pendingLiveEditAppend = false
         /// The exact markdown the current DOM was rendered from — sourcepos
         /// line numbers in the page are only valid against this text.
         var renderedMarkdown = ""
@@ -765,6 +790,18 @@ struct PreviewView: NSViewRepresentable {
                     webView.evaluateJavaScript("window.clearlyEditBlockAtLine && window.clearlyEditBlockAtLine(\(line), \(clear), \(caretStart))")
                 }
             }
+            if let insertAfter = pendingLiveEditInsertAfter {
+                pendingLiveEditInsertAfter = nil
+                if lastMode == .live {
+                    webView.evaluateJavaScript("window.clearlyBeginInsertAfterLine && window.clearlyBeginInsertAfterLine(\(insertAfter))")
+                }
+            }
+            if pendingLiveEditAppend {
+                pendingLiveEditAppend = false
+                if lastMode == .live {
+                    webView.evaluateJavaScript("window.clearlyBeginAppend && window.clearlyBeginAppend()")
+                }
+            }
             // Restore scroll position after HTML reload
             if scrollFraction > 0.01 {
                 let js = "var ms=Math.max(1,document.body.scrollHeight-window.innerHeight);window.scrollTo(0,\(scrollFraction)*ms);"
@@ -870,13 +907,40 @@ struct PreviewView: NSViewRepresentable {
                         pendingLiveEditClear = false
                         pendingLiveEditCaretStart = body["reopenCaretStart"] as? Bool ?? false
                     }
+                    // Enter on a heading/checklist: after the commit's
+                    // reload, open a new-block editor below the block.
+                    if let insertAfter = body["insertAfter"] as? Int,
+                       LiveEditSupport.applyingEdit(
+                           to: renderedMarkdown, start: start, end: end, original: original, replacement: text
+                       ) != nil {
+                        pendingLiveEditInsertAfter = insertAfter
+                    }
                     DispatchQueue.main.async { [weak self] in
                         self?.onLiveEdit?(start, end, original, text)
                     }
                 case "appendBlock":
                     guard let text = body["text"] as? String else { return }
+                    if body["reopenAppend"] as? Bool == true {
+                        pendingLiveEditAppend = true
+                    }
                     DispatchQueue.main.async { [weak self] in
                         self?.onLiveAppend?(text)
+                    }
+                case "insertBlock":
+                    guard let afterLine = body["afterLine"] as? Int,
+                          let text = body["text"] as? String else { return }
+                    if body["reopenInsert"] as? Bool == true {
+                        // The inserted block spans afterLine+2 ... afterLine+1+n
+                        // (one separator blank line above it).
+                        pendingLiveEditInsertAfter = afterLine + 1 + text.components(separatedBy: "\n").count
+                    }
+                    DispatchQueue.main.async { [weak self] in
+                        self?.onLiveInsert?(afterLine, text)
+                    }
+                case "editingState":
+                    let editing = body["active"] as? Bool ?? false
+                    DispatchQueue.main.async { [weak self] in
+                        self?.onLiveEditingChanged?(editing)
                     }
                 case "deleteBlock":
                     guard let start = body["start"] as? Int,
