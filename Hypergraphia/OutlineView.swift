@@ -32,6 +32,7 @@ struct OutlineView: View {
                             }
                         }
                     }
+                    .padding(.top, 8)
                     .padding(.bottom, 8)
                 }
             }
@@ -69,6 +70,7 @@ private struct HeadingRow: View {
                 .padding(.leading, 12 + indent)
                 .padding(.trailing, 8)
                 .padding(.vertical, 5)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .pointerStyle(.link)
