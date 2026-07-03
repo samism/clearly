@@ -34,10 +34,10 @@ struct ContentView: View {
     /// don't flash the strip between two editors.
     @State private var isBlockEditing: Bool = false
     @State private var isHoveringTabBand: Bool = false
+    /// Hovering the band while editing pins the strip visible for the rest
+    /// of that editing session (a new editor or a scroll re-hides it).
+    @State private var editHideCleared: Bool = false
     @State private var editingClearWork: DispatchWorkItem?
-    /// Scrolling the content also tucks the strip away; hovering the top
-    /// band clears the latch so the strip stays once revealed.
-    @State private var isScrollHidden: Bool = false
     /// A save-as binding an untitled window to an auto-created file is in
     /// flight; guards against double-creation while it completes.
     @State private var autoCreatePending: Bool = false
@@ -203,10 +203,10 @@ struct ContentView: View {
                     BottomHoverTracker { hovering in
                         withAnimation(tabStripAnimation) {
                             isHoveringTabBand = hovering
-                            // Reaching for the strip un-latches the scroll
+                            // Reaching for the strip un-latches the editing
                             // hide, so it stays put after the mouse moves on.
                             if hovering {
-                                isScrollHidden = false
+                                editHideCleared = true
                             }
                         }
                     }
@@ -286,7 +286,7 @@ struct ContentView: View {
     /// Whether the tab strip is currently shown (its band collapses to zero
     /// height otherwise, extending the content to the window's top border).
     private var stripRevealed: Bool {
-        (!isBlockEditing && !isScrollHidden) || isHoveringTabBand
+        !isBlockEditing || editHideCleared || isHoveringTabBand
     }
 
     /// Hide/reveal animation for the tab strip band and everything that
@@ -449,13 +449,6 @@ struct ContentView: View {
                 onLiveEditingChanged: { editing in
                     setBlockEditing(editing)
                 },
-                onUserScroll: {
-                    if !isScrollHidden {
-                        withAnimation(tabStripAnimation) {
-                            isScrollHidden = true
-                        }
-                    }
-                },
                 onLiveTyping: {
                     autoCreateFileIfNeeded()
                 },
@@ -493,11 +486,14 @@ struct ContentView: View {
         if editing {
             withAnimation(tabStripAnimation) {
                 isBlockEditing = true
+                // Each new editing session hides the strip afresh.
+                editHideCleared = false
             }
         } else {
             let work = DispatchWorkItem {
                 withAnimation(tabStripAnimation) {
                     isBlockEditing = false
+                    editHideCleared = false
                 }
             }
             editingClearWork = work

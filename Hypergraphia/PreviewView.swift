@@ -38,8 +38,6 @@ struct PreviewView: NSViewRepresentable {
     var onLiveInsert: ((Int, String) -> Void)?
     /// A live-mode block editor opened (true) or closed (false).
     var onLiveEditingChanged: ((Bool) -> Void)?
-    /// The user scrolled the content area (wheel/trackpad event).
-    var onUserScroll: (() -> Void)?
     /// First keystroke in a live-mode block editor.
     var onLiveTyping: (() -> Void)?
     /// Live mode: append a new block to the end of the document.
@@ -95,7 +93,6 @@ struct PreviewView: NSViewRepresentable {
         context.coordinator.onLiveAppend = onLiveAppend
         context.coordinator.onLiveInsert = onLiveInsert
         context.coordinator.onLiveEditingChanged = onLiveEditingChanged
-        context.coordinator.onUserScroll = onUserScroll
         context.coordinator.onLiveTyping = onLiveTyping
         let coordinator = context.coordinator
         findState?.previewNavigateToNext = { [weak coordinator] in
@@ -127,21 +124,12 @@ struct PreviewView: NSViewRepresentable {
         // page and don't move first responder off the web view, so a live-
         // mode block editor would silently stay open. Watch for clicks in
         // this window that land outside the web view and close it explicitly.
-        // Scroll-wheel events over the content area (the editor shares the
-        // web view's frame) also report up so the tab strip can auto-hide;
-        // being real NSEvents, programmatic scroll restores never trigger it.
-        let monitorCoordinator = context.coordinator
         context.coordinator.chromeClickMonitor = NSEvent.addLocalMonitorForEvents(
-            matching: [.leftMouseDown, .rightMouseDown, .scrollWheel]
-        ) { [weak webView, weak monitorCoordinator] event in
+            matching: [.leftMouseDown, .rightMouseDown]
+        ) { [weak webView] event in
             if let webView, let window = webView.window, event.window === window {
                 let point = webView.convert(event.locationInWindow, from: nil)
-                let inside = webView.bounds.contains(point)
-                if event.type == .scrollWheel {
-                    if inside {
-                        monitorCoordinator?.onUserScroll?()
-                    }
-                } else if !inside {
+                if !webView.bounds.contains(point) {
                     webView.evaluateJavaScript("window.clearlyCloseActiveEditor && window.clearlyCloseActiveEditor();")
                 }
             }
@@ -449,7 +437,6 @@ struct PreviewView: NSViewRepresentable {
         var onLiveAppend: ((String) -> Void)?
         var onLiveInsert: ((Int, String) -> Void)?
         var onLiveEditingChanged: ((Bool) -> Void)?
-        var onUserScroll: (() -> Void)?
         var onLiveTyping: (() -> Void)?
         /// After the next reload, open a new-block insert editor below this line.
         var pendingLiveEditInsertAfter: Int?
