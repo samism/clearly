@@ -10,19 +10,23 @@ struct ContentView: View {
     let fileURL: URL?
 
     @State private var viewMode: ViewMode
-    @State private var sidebarMode: SidebarMode = .folder
+    /// Shared across all windows/tabs (and relaunches): tab switches must
+    /// not appear to flip the sidebar between files and outline.
+    @AppStorage("sidebarMode") private var sidebarMode: SidebarMode = .folder
     @StateObject private var outlineState = OutlineState()
     @StateObject private var folderState = FolderState()
     @StateObject private var findState = FindState()
     @StateObject private var jumpToLineState = JumpToLineState()
     @StateObject private var statusBarState = StatusBarState()
+    @StateObject private var tabModel = EditorTabModel()
 
     @AppStorage("editorFontSize") private var fontSize: Double = 12
     @AppStorage("previewFontFamily") private var previewFontFamily: String = "sanFrancisco"
     @AppStorage("contentWidth") private var contentWidth: String = "off"
-    @AppStorage("showLineNumbers") private var showLineNumbers: Bool = false
     @AppStorage("alwaysShowBottomToolbar") private var alwaysShowBottomToolbar: Bool = false
 
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isHoveringBottom: Bool = false
 
     /// Stable per-window key for ScrollBridge / SelectionBridge. Re-keyed on
@@ -55,72 +59,15 @@ struct ContentView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            if findState.isVisible {
-                FindBarView(findState: findState)
-                Divider()
-            }
-            if jumpToLineState.isVisible {
-                JumpToLineBar(state: jumpToLineState)
-                Divider()
-            }
-
-            HStack(spacing: 0) {
-                if outlineState.isVisible {
-                    SidebarView(
-                        mode: $sidebarMode,
-                        outlineState: outlineState,
-                        folderState: folderState,
-                        isEditorVisible: viewMode == .edit,
-                        fileURL: fileURL
-                    )
-                    .frame(width: 240)
-                }
-
-                mainPane
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .overlay(alignment: .bottom) {
-                        ZStack(alignment: .bottom) {
-                            BottomHoverTracker { hovering in
-                                withAnimation(.easeInOut(duration: 0.18)) {
-                                    isHoveringBottom = hovering
-                                }
-                            }
-                            .frame(height: 96)
-
-                            if shouldShowBottomToolbar {
-                                LinearGradient(
-                                    stops: [
-                                        .init(color: Theme.backgroundColorSwiftUI.opacity(0), location: 0),
-                                        .init(color: Theme.backgroundColorSwiftUI.opacity(0.7), location: 0.55),
-                                        .init(color: Theme.backgroundColorSwiftUI, location: 1)
-                                    ],
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                )
-                                .frame(height: 96)
-                                .allowsHitTesting(false)
-                                .transition(.opacity)
-
-                                BottomToolbar(
-                                    viewMode: $viewMode,
-                                    statusBarState: statusBarState,
-                                    outlineState: outlineState,
-                                    fileURL: fileURL,
-                                    documentText: { document.text }
-                                )
-                                .padding(.horizontal, 12)
-                                .padding(.bottom, 6)
-                                .transition(.opacity.combined(with: .move(edge: .bottom)))
-                            }
-                        }
-                    }
-            }
+        GeometryReader { proxy in
+            mainLayout(topInset: proxy.safeAreaInsets.top)
         }
         .frame(minWidth: 600, minHeight: 360)
-        .background(WindowTitleSetter(fileURL: fileURL) { window in
+        .background(WindowTitleSetter(fileURL: fileURL, newFile: { window in
             newFile(tabbingInto: window)
-        })
+        }, onWindow: { window in
+            tabModel.adopt(window)
+        }))
         .focusedSceneValue(\.findState, findState)
         .focusedSceneValue(\.outlineState, outlineState)
         .focusedSceneValue(\.viewMode, $viewMode)
@@ -145,6 +92,17 @@ struct ContentView: View {
             outlineState.parseHeadings(from: newText)
             statusBarState.updateText(newText)
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
+            // Sidebar visibility persists globally ("outlineVisible"), but
+            // each tab is its own window whose OutlineState snapshotted the
+            // default at init. Without reconciling on key changes, switching
+            // tabs flips between stale snapshots and the sidebar appears to
+            // toggle on its own.
+            let stored = UserDefaults.standard.bool(forKey: "outlineVisible")
+            if outlineState.isVisible != stored {
+                outlineState.isVisible = stored
+            }
+        }
         .onChange(of: fileURL) { _, _ in
             // Re-key bridges when the document is saved/renamed so a new
             // file's scroll position doesn't inherit the old fraction.
@@ -167,6 +125,204 @@ struct ContentView: View {
         }
     }
 
+    /// Window content. `topInset` is the height of the (transparent) titlebar
+    /// region — the traffic-light strip, plus the native tab bar when tabs are
+    /// showing. The sidebar extends up under it; the editor column stays
+    /// below it.
+    @ViewBuilder
+    private func mainLayout(topInset rawTopInset: CGFloat) -> some View {
+        // When our own tab strip is handling tabs, the hidden native tab bar
+        // may still reserve titlebar height in the safe area — cap the inset
+        // at the plain traffic-light strip so the content reclaims that space.
+        let topInset = tabModel.tabs.isEmpty ? rawTopInset : min(rawTopInset, 28)
+        HStack(spacing: 0) {
+            if outlineState.isVisible {
+                sidebar(topInset: topInset)
+                    .transition(.move(edge: .leading).combined(with: .opacity))
+            }
+
+            VStack(spacing: 0) {
+                if #available(macOS 26.0, *), tabsShowing {
+                    // Tabs live in the traffic-light band (Safari-style);
+                    // the strip's divider lines up with the sidebar's
+                    // top-strip separator. With the sidebar hidden, the
+                    // leading inset keeps tabs clear of the floating
+                    // traffic lights and toggle.
+                    EditorTabStrip(
+                        model: tabModel,
+                        leadingInset: outlineState.isVisible ? 0 : 122
+                    ) {
+                        newFile(tabbingInto: tabModel.window)
+                    }
+                    .padding(.top, 7)
+                    .padding(.bottom, 7)
+                    Divider()
+                }
+                if findState.isVisible {
+                    FindBarView(findState: findState)
+                    Divider()
+                }
+                if jumpToLineState.isVisible {
+                    JumpToLineBar(state: jumpToLineState)
+                    Divider()
+                }
+
+                mainPane
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .overlay(alignment: .bottom) {
+                        bottomToolbarOverlay
+                    }
+            }
+            // The traffic-light band only needs reserving when it actually
+            // floats over the editor column: sidebar hidden and no tab strip.
+            // With the sidebar open the lights sit over the panel, so the
+            // editor content rises to the window top.
+            .padding(.top, (tabsShowing || outlineState.isVisible) ? 0 : topInset)
+        }
+        // Match the editor background so the gutters around the floating
+        // glass sidebar read as one continuous surface, not window chrome.
+        .background(Theme.backgroundColorSwiftUI)
+        .ignoresSafeArea(.container, edges: .top)
+        .overlay(alignment: .top) {
+            if #available(macOS 26.0, *), topInset > 0, !tabsShowing, !outlineState.isVisible {
+                // The titlebar is hidden; this strip keeps the top of the
+                // window draggable when no tab strip occupies it and the
+                // sidebar (whose top strip has its own drag handle) is
+                // hidden. Content-blocking matters: when the editor rises to
+                // the window top, this overlay must not sit over it. Overlay
+                // content gets the container safe area re-applied, so it
+                // must ignore it again to reach the true window top.
+                Color.clear
+                    .frame(height: topInset)
+                    .frame(maxWidth: .infinity)
+                    .contentShape(Rectangle())
+                    .gesture(WindowDragGesture())
+                    .ignoresSafeArea(.container, edges: .top)
+            }
+        }
+        .overlay(alignment: .topLeading) {
+            if #available(macOS 26.0, *) {
+                sidebarToggle
+                    .padding(.leading, 90)
+                    .padding(.top, 13)
+                    .ignoresSafeArea(.container, edges: .top)
+            }
+        }
+        // Fast slide for the sidebar; the editor column, tab-strip inset,
+        // and button row glide along with it. Scoped to visibility so no
+        // other layout change picks up the animation.
+        .animation(
+            reduceMotion ? nil : .spring(response: 0.25, dampingFraction: 0.9),
+            value: outlineState.isVisible
+        )
+    }
+
+    /// Whether the custom editor tab strip is occupying the top band.
+    private var tabsShowing: Bool {
+        if #available(macOS 26.0, *) {
+            return !tabModel.tabs.isEmpty
+        }
+        return false
+    }
+
+    /// Claude-desktop-style toggle that lives next to the traffic lights —
+    /// inside the glass sidebar when it's open, floating over the editor
+    /// strip when it's closed.
+    @available(macOS 26.0, *)
+    private var sidebarToggle: some View {
+        Button {
+            outlineState.isVisible.toggle()
+        } label: {
+            Image(systemName: "sidebar.left")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(width: 28, height: 24)
+                .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .pointerStyle(.link)
+        .help(outlineState.isVisible ? "Hide sidebar" : "Show sidebar")
+        .accessibilityLabel(outlineState.isVisible ? "Hide sidebar" : "Show sidebar")
+    }
+
+    private var bottomToolbarOverlay: some View {
+        ZStack(alignment: .bottom) {
+            BottomHoverTracker { hovering in
+                withAnimation(.easeInOut(duration: 0.18)) {
+                    isHoveringBottom = hovering
+                }
+            }
+            .frame(height: 96)
+
+            if shouldShowBottomToolbar {
+                LinearGradient(
+                    stops: [
+                        .init(color: Theme.backgroundColorSwiftUI.opacity(0), location: 0),
+                        .init(color: Theme.backgroundColorSwiftUI.opacity(0.7), location: 0.55),
+                        .init(color: Theme.backgroundColorSwiftUI, location: 1)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .frame(height: 96)
+                .allowsHitTesting(false)
+                .transition(.opacity)
+
+                BottomToolbar(
+                    viewMode: $viewMode,
+                    statusBarState: statusBarState,
+                    outlineState: outlineState,
+                    fileURL: fileURL,
+                    documentText: { document.text }
+                )
+                .padding(.horizontal, 12)
+                .padding(.bottom, 6)
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
+        }
+    }
+
+    /// Left sidebar. On macOS 26+ it floats as an inset Liquid Glass panel —
+    /// same rounded-glass chrome Finder and Xcode use for their sidebars —
+    /// with a faint blue cast, hosting the traffic lights in its top strip.
+    /// Earlier systems keep the flat full-height panel.
+    @ViewBuilder
+    private func sidebar(topInset: CGFloat) -> some View {
+        if #available(macOS 26.0, *) {
+            SidebarView(
+                mode: $sidebarMode,
+                outlineState: outlineState,
+                folderState: folderState,
+                isEditorVisible: viewMode == .edit,
+                fileURL: fileURL,
+                // Top strip tall enough for the traffic lights + overlay
+                // buttons; its separator sits at 48pt from the window top,
+                // level with the tab strip's divider.
+                chromeTopPadding: max(40, topInset + 12)
+            )
+            .frame(width: 240)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .glassEffect(
+                // systemBlue resolves dynamically for light/dark; the low
+                // opacity keeps it a hue the glass picks up, not a fill.
+                .regular.tint(Color(nsColor: .systemBlue).opacity(colorScheme == .dark ? 0.15 : 0.1)),
+                in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+            )
+            .padding(.leading, 8)
+            .padding(.trailing, 8)
+            .padding(.vertical, 8)
+        } else {
+            SidebarView(
+                mode: $sidebarMode,
+                outlineState: outlineState,
+                folderState: folderState,
+                isEditorVisible: viewMode == .edit,
+                fileURL: fileURL
+            )
+            .frame(width: 240)
+        }
+    }
+
     @ViewBuilder
     private var mainPane: some View {
         ZStack {
@@ -179,7 +335,6 @@ struct ContentView: View {
                 findState: findState,
                 outlineState: outlineState,
                 extraBottomInset: BottomToolbar.pillHeight + 24,
-                showLineNumbers: showLineNumbers,
                 jumpToLineState: jumpToLineState,
                 statusBarState: statusBarState,
                 contentWidthEm: contentWidthEm
@@ -283,6 +438,7 @@ struct ContentView: View {
 private struct WindowTitleSetter: NSViewRepresentable {
     let fileURL: URL?
     let newFile: (NSWindow?) -> Void
+    let onWindow: (NSWindow) -> Void
 
     func makeNSView(context: Context) -> NSView {
         NSView()
@@ -297,6 +453,7 @@ private struct WindowTitleSetter: NSViewRepresentable {
                 window.hypergraphiaNewFileAction = { [weak window] in
                     newFile(window)
                 }
+                onWindow(window)
             }
 
             guard let target = fileURL?.standardizedFileURL else { return }

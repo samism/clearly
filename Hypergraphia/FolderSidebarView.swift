@@ -2,9 +2,10 @@ import SwiftUI
 import AppKit
 import HypergraphiaCore
 
-/// Which content the left sidebar shows. Per-window, the file list is the
-/// default, and outline stays one click away.
-enum SidebarMode {
+/// Which content the left sidebar shows. Backed by `@AppStorage` so every
+/// window (tab) reflects the same mode — switching tabs must not appear to
+/// flip the sidebar. String-raw for AppStorage compatibility.
+enum SidebarMode: String {
     case outline
     case folder
 }
@@ -17,11 +18,22 @@ struct SidebarView: View {
     @ObservedObject var folderState: FolderState
     var isEditorVisible: Bool
     let fileURL: URL?
+    /// Height of the panel's top strip under the titlebar-less glass chrome.
+    /// The traffic lights and the window-level sidebar/mode buttons overlay
+    /// this area; the file list / outline starts right below it.
+    var chromeTopPadding: CGFloat = 0
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            header
+            // Traffic-light strip. Empty in the view tree — the lights and
+            // the overlay buttons float above it — but it doubles as a
+            // window-drag handle now that the titlebar is gone.
+            Color.clear
+                .frame(height: chromeTopPadding)
+                .frame(maxWidth: .infinity)
+                .contentShape(Rectangle())
+                .gesture(WindowDragGesture())
 
             Rectangle()
                 .fill(Theme.separatorColor(inDark: colorScheme == .dark))
@@ -36,55 +48,18 @@ struct SidebarView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Theme.outlinePanelBackgroundSwiftUI)
+        .background(panelBackground)
     }
 
-    private var header: some View {
-        HStack(spacing: 8) {
-            HStack(spacing: 2) {
-                modeTab("FILES", systemImage: "doc.text", .folder)
-                modeTab("OUTLINE", systemImage: "list.bullet.indent", .outline)
-            }
-            .padding(3)
-            .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(Theme.hoverColor(inDark: colorScheme == .dark).opacity(0.55))
-            )
-
-            Spacer()
+    /// On macOS 26+ the container supplies a Liquid Glass surface, so the
+    /// panel itself must stay transparent for the glass to show through.
+    @ViewBuilder
+    private var panelBackground: some View {
+        if #available(macOS 26.0, *) {
+            Color.clear
+        } else {
+            Theme.outlinePanelBackgroundSwiftUI
         }
-        .padding(.horizontal, 12)
-        .padding(.top, 9)
-        .padding(.bottom, 7)
-    }
-
-    private func modeTab(_ title: String, systemImage: String, _ tabMode: SidebarMode) -> some View {
-        let isSelected = mode == tabMode
-
-        return Button {
-            mode = tabMode
-        } label: {
-            Label {
-                Text(title)
-                    .font(.system(size: 10, weight: .semibold))
-            } icon: {
-                Image(systemName: systemImage)
-                    .font(.system(size: 10, weight: .semibold))
-            }
-            .labelStyle(.titleAndIcon)
-            .foregroundStyle(isSelected ? AnyShapeStyle(.primary) : AnyShapeStyle(.tertiary))
-            .padding(.horizontal, 8)
-            .frame(height: 22)
-            .background(
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(isSelected
-                        ? Theme.backgroundColorSwiftUI.opacity(colorScheme == .dark ? 0.7 : 0.95)
-                        : Color.clear)
-            )
-        }
-        .buttonStyle(.plain)
-        .pointerStyle(.link)
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 
@@ -93,6 +68,8 @@ struct SidebarView: View {
 private struct FolderListView: View {
     @ObservedObject var folderState: FolderState
     let currentFileURL: URL?
+    /// File currently being renamed inline; its row shows a text field.
+    @State private var renamingFileURL: URL?
 
     var body: some View {
         if let folderURL = folderState.folderURL {
@@ -113,13 +90,19 @@ private struct FolderListView: View {
                             ForEach(folderState.files) { file in
                                 FileRow(
                                     file: file,
-                                    isCurrent: file.url.standardizedFileURL == currentFileURL?.standardizedFileURL
+                                    isCurrent: file.url.standardizedFileURL == currentFileURL?.standardizedFileURL,
+                                    isRenaming: renamingFileURL == file.url
                                 ) {
                                     openMarkdownDocument(at: file.url, from: folderURL)
                                 } onRename: {
-                                    rename(file)
+                                    renamingFileURL = file.url
                                 } onDelete: {
                                     delete(file)
+                                } onRenameCommit: { newName in
+                                    renamingFileURL = nil
+                                    performRename(file, to: newName)
+                                } onRenameCancel: {
+                                    renamingFileURL = nil
                                 }
                             }
                         }
@@ -187,11 +170,12 @@ private struct FolderListView: View {
         }
     }
 
-    private func rename(_ file: FolderFile) {
-        guard let requestedName = RenamePanel.chooseName(for: file) else { return }
+    private func performRename(_ file: FolderFile, to requestedName: String) {
+        let trimmed = requestedName.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty, trimmed != file.displayName else { return }
 
         do {
-            let newURL = try FolderState.renamedFileURL(for: file.url, displayName: requestedName)
+            let newURL = try FolderState.renamedFileURL(for: file.url, displayName: trimmed)
             guard newURL.standardizedFileURL != file.url.standardizedFileURL else { return }
             guard !FileManager.default.fileExists(atPath: newURL.path) else {
                 throw FolderStateError.fileAlreadyExists(newURL.lastPathComponent)
@@ -250,12 +234,25 @@ private struct FolderListView: View {
 private struct FileRow: View {
     let file: FolderFile
     let isCurrent: Bool
+    let isRenaming: Bool
     let onTap: () -> Void
     let onRename: () -> Void
     let onDelete: () -> Void
+    let onRenameCommit: (String) -> Void
+    let onRenameCancel: () -> Void
     @Environment(\.colorScheme) private var colorScheme
+    @State private var draftName: String = ""
+    @FocusState private var renameFieldFocused: Bool
 
     var body: some View {
+        if isRenaming {
+            renameField
+        } else {
+            row
+        }
+    }
+
+    private var row: some View {
         Button(action: onTap) {
             HStack(spacing: 0) {
                 Text(file.displayName)
@@ -281,7 +278,7 @@ private struct FileRow: View {
                 .padding(.horizontal, 4)
         )
         .contextMenu {
-            Button("Rename…") {
+            Button("Rename") {
                 onRename()
             }
             Divider()
@@ -290,6 +287,41 @@ private struct FileRow: View {
             }
         }
         .accessibilityAddTraits(isCurrent ? .isSelected : [])
+    }
+
+    /// In-place editor replacing the row while renaming: Return commits,
+    /// Escape cancels, clicking away commits (Finder-style).
+    private var renameField: some View {
+        TextField("", text: $draftName)
+            .textFieldStyle(.plain)
+            .font(.system(size: 12))
+            .focused($renameFieldFocused)
+            .onSubmit {
+                onRenameCommit(draftName)
+            }
+            .onExitCommand {
+                onRenameCancel()
+            }
+            .onChange(of: renameFieldFocused) { _, focused in
+                if !focused && isRenaming {
+                    onRenameCommit(draftName)
+                }
+            }
+            .padding(.leading, 12)
+            .padding(.trailing, 8)
+            .padding(.vertical, 5)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(Theme.hoverColor(inDark: colorScheme == .dark))
+                    .padding(.horizontal, 4)
+            )
+            .onAppear {
+                draftName = file.displayName
+                DispatchQueue.main.async {
+                    renameFieldFocused = true
+                }
+            }
+            .accessibilityLabel("Rename \(file.displayName)")
     }
 }
 
@@ -304,23 +336,6 @@ enum FolderPanel {
         panel.allowsMultipleSelection = false
         panel.prompt = "Open Folder"
         return panel.runModal() == .OK ? panel.url : nil
-    }
-}
-
-enum RenamePanel {
-    @MainActor
-    static func chooseName(for file: FolderFile) -> String? {
-        let alert = NSAlert()
-        alert.messageText = "Rename File"
-        alert.informativeText = "Enter a new name for \(file.displayName)."
-        alert.addButton(withTitle: "Rename")
-        alert.addButton(withTitle: "Cancel")
-
-        let field = NSTextField(string: file.displayName)
-        field.frame = NSRect(x: 0, y: 0, width: 260, height: 24)
-        alert.accessoryView = field
-
-        return alert.runModal() == .alertFirstButtonReturn ? field.stringValue : nil
     }
 }
 
@@ -358,13 +373,165 @@ func setDocumentTitle(_ document: NSDocument?, for url: URL?) {
 func configureDocumentWindowChrome(_ window: NSWindow?) {
     guard let window else { return }
 
-    window.titleVisibility = .visible
-    window.titlebarAppearsTransparent = false
-    window.styleMask.remove(.fullSizeContentView)
+    if #available(macOS 26.0, *) {
+        // Liquid-glass chrome: no title bar; the traffic lights sit inside
+        // the floating sidebar, Finder-style. The window title is still set
+        // (tabs, Mission Control, and the Window menu need it) — it's just
+        // not drawn.
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.styleMask.insert(.fullSizeContentView)
+        TrafficLightMover.shared.manage(window)
+        hideNativeTabBar(in: window)
+    } else {
+        window.titleVisibility = .visible
+        window.titlebarAppearsTransparent = false
+        window.styleMask.remove(.fullSizeContentView)
+    }
     configureNativeTabAddButton(in: window)
 
     Task { @MainActor [weak window] in
         configureNativeTabAddButton(in: window)
+        if #available(macOS 26.0, *) {
+            hideNativeTabBar(in: window)
+        }
+    }
+}
+
+/// The native tab bar spans the whole window and cuts across the floating
+/// glass sidebar, so under the titlebar-less chrome it stays hidden;
+/// `EditorTabStrip` renders the same tab group nested in the editor column.
+///
+/// `toggleTabBar` cannot do this: AppKit refuses to hide the bar while the
+/// group has more than one tab (the same reason View ▸ Hide Tab Bar grays
+/// out). So, in the spirit of the existing `plusTab` retargeting hack, the
+/// bar's titlebar accessory view is hidden directly — the tab group itself
+/// stays fully functional. Re-enforced from chrome configuration and
+/// `EditorTabModel.refresh()` since AppKit re-adds the accessory when tabs
+/// change.
+@MainActor
+func hideNativeTabBar(in window: NSWindow?) {
+    guard let window else { return }
+    hideTabBarChrome(in: window)
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak window] in
+        guard let window else { return }
+        hideTabBarChrome(in: window)
+    }
+}
+
+@MainActor
+private func hideTabBarChrome(in window: NSWindow) {
+    // Preferred: the accessory controller — hiding it reclaims the titlebar
+    // space in layout.
+    for accessory in window.titlebarAccessoryViewControllers
+    where containsTabBar(accessory.view) {
+        if !accessory.isHidden {
+            accessory.isHidden = true
+        }
+    }
+    // Fallback: hide any tab-bar view hosted directly in the theme frame.
+    if let frameView = window.contentView?.superview {
+        hideTabBarViews(in: frameView)
+    }
+}
+
+@MainActor
+private func containsTabBar(_ view: NSView) -> Bool {
+    if String(describing: type(of: view)).contains("TabBar") {
+        return true
+    }
+    return view.subviews.contains { containsTabBar($0) }
+}
+
+@MainActor
+private func hideTabBarViews(in view: NSView) {
+    for subview in view.subviews {
+        if String(describing: type(of: subview)).contains("TabBar") {
+            if !subview.isHidden {
+                subview.isHidden = true
+            }
+        } else {
+            hideTabBarViews(in: subview)
+        }
+    }
+}
+
+/// Nudges the standard window buttons down-right so they sit inside the
+/// floating glass sidebar (the way Finder positions them) instead of hugging
+/// the window corner. AppKit rebuilds the titlebar asynchronously after the
+/// style-mask change and resets the button frames, so the offset is
+/// re-applied on delayed ticks and on resize / key-state / fullscreen
+/// notifications. Base origins are cached per window so repeated
+/// applications don't accumulate.
+@MainActor
+final class TrafficLightMover {
+    static let shared = TrafficLightMover()
+    static let offset = CGPoint(x: 12, y: 10)
+
+    private let buttonTypes: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
+    private var baseOrigins: [ObjectIdentifier: [NSWindow.ButtonType: CGPoint]] = [:]
+    private var managed = Set<ObjectIdentifier>()
+
+    func manage(_ window: NSWindow) {
+        apply(to: window)
+        for delay in [0.05, 0.3, 1.0] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self, weak window] in
+                guard let window else { return }
+                self?.apply(to: window)
+            }
+        }
+        let key = ObjectIdentifier(window)
+        guard !managed.contains(key) else { return }
+        managed.insert(key)
+
+        let names: [Notification.Name] = [
+            NSWindow.didResizeNotification,
+            NSWindow.didBecomeKeyNotification,
+            NSWindow.didResignKeyNotification,
+            NSWindow.didExitFullScreenNotification
+        ]
+        for name in names {
+            NotificationCenter.default.addObserver(
+                forName: name, object: window, queue: .main
+            ) { [weak self, weak window] _ in
+                guard let window else { return }
+                MainActor.assumeIsolated {
+                    self?.apply(to: window)
+                }
+            }
+        }
+    }
+
+    private func apply(to window: NSWindow) {
+        // No represented URL under the titlebar-less chrome: the document
+        // proxy icon and the hover title-menu chevron would float orphaned
+        // over the sidebar's top strip. NSDocument re-sets it on every title
+        // sync, so this heals on the same cadence as the button offsets.
+        if window.representedURL != nil {
+            window.representedURL = nil
+        }
+        if let proxy = window.standardWindowButton(.documentIconButton), !proxy.isHidden {
+            proxy.isHidden = true
+        }
+        let key = ObjectIdentifier(window)
+        for type in buttonTypes {
+            guard let button = window.standardWindowButton(type) else { continue }
+            let base: CGPoint
+            if let cached = baseOrigins[key]?[type] {
+                base = cached
+            } else {
+                base = button.frame.origin
+                baseOrigins[key, default: [:]][type] = base
+            }
+            let flipped = button.superview?.isFlipped ?? false
+            let target = NSPoint(
+                x: base.x + Self.offset.x,
+                y: flipped ? base.y + Self.offset.y : base.y - Self.offset.y
+            )
+            if button.frame.origin != target {
+                button.setFrameOrigin(target)
+            }
+        }
     }
 }
 
