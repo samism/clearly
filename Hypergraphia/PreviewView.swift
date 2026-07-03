@@ -148,6 +148,27 @@ struct PreviewView: NSViewRepresentable {
             return event
         }
 
+        // Cmd+A while a block editor is open: the Edit menu's Select All key
+        // equivalent would swallow the event before the page sees a keydown,
+        // capping the selection at the block. Route it to the page instead —
+        // a first press selects the block, a repeat widens to the whole
+        // document.
+        let keyCoordinator = context.coordinator
+        context.coordinator.selectAllKeyMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.keyDown]
+        ) { [weak webView, weak keyCoordinator] event in
+            guard let webView, let coordinator = keyCoordinator,
+                  coordinator.isLiveEditing,
+                  let window = webView.window, event.window === window,
+                  event.modifierFlags.intersection([.command, .shift, .option, .control]) == .command,
+                  event.charactersIgnoringModifiers?.lowercased() == "a",
+                  let responder = window.firstResponder as? NSView,
+                  responder === webView || responder.isDescendant(of: webView)
+            else { return event }
+            webView.evaluateJavaScript("window.clearlySelectAllInEditor && window.clearlySelectAllInEditor();")
+            return nil
+        }
+
         loadHTML(in: webView, context: context)
         return webView
     }
@@ -221,6 +242,10 @@ struct PreviewView: NSViewRepresentable {
         if let monitor = coordinator.chromeClickMonitor {
             NSEvent.removeMonitor(monitor)
             coordinator.chromeClickMonitor = nil
+        }
+        if let monitor = coordinator.selectAllKeyMonitor {
+            NSEvent.removeMonitor(monitor)
+            coordinator.selectAllKeyMonitor = nil
         }
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "linkClicked")
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "scrollSync")
@@ -450,6 +475,9 @@ struct PreviewView: NSViewRepresentable {
         /// NSEvent local monitor closing the live-mode block editor when a
         /// click lands on app chrome outside the web view.
         var chromeClickMonitor: Any?
+        /// NSEvent local monitor routing Cmd+A to the open block editor
+        /// (menu key equivalents would otherwise cap it at the block).
+        var selectAllKeyMonitor: Any?
         var isLoadingContent = false
         var pendingScrollLine: Int?
         var pendingHighlightText: String?

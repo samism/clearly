@@ -420,8 +420,11 @@ public enum LiveEditSupport {
                                recs: removeRenderedBlocks(a.end + 1, newEnd) });
                 a.end = newEnd;
             }
-            // Mixed content: drop heading scale and mono styling.
+            // Mixed content: drop heading scale, mono styling, and the
+            // in-place list-item editor's inline prefix outdent.
             a.wrap.className = 'live-editor';
+            a.wrap.style.marginLeft = '';
+            a.wrap.style.width = '';
             a.ta.classList.remove('live-mono');
             a.ta.style.height = '';
             autogrow(a.ta);
@@ -1031,6 +1034,23 @@ public enum LiveEditSupport {
         // buttons don't steal first responder), so the native side watches
         // for clicks outside the web view and closes the editor explicitly.
         window.clearlyCloseActiveEditor = function() { closeActive(true); };
+
+        // Cmd+A routed from native (the Edit menu's key equivalent consumes
+        // it before the DOM ever sees a keydown). First press selects the
+        // block; pressing with everything already selected widens the editor
+        // to the whole document and selects all of it.
+        window.clearlySelectAllInEditor = function() {
+            if (!active || active.committed) return false;
+            var a = active, ta = a.ta;
+            if (ta.value.length > 0
+                && ta.selectionStart === 0 && ta.selectionEnd === ta.value.length) {
+                expandActive(a, true, true);
+                expandActive(a, false, true);
+            }
+            ta.focus();
+            ta.setSelectionRange(0, ta.value.length);
+            return true;
+        };
 
         // Text cursor over the empty space below the content, where a click
         // appends a new block.
