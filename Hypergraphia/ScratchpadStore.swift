@@ -60,6 +60,10 @@ final class ScratchpadStore {
         let urls = (try? fm.contentsOfDirectory(at: directory,
                                                 includingPropertiesForKeys: keys,
                                                 options: [.skipsHiddenFiles])) ?? []
+        // refresh() runs on every app activation; reuse derived titles and
+        // previews for notes whose files haven't changed so re-activating
+        // the app costs stats, not a file read per note.
+        let previous = Dictionary(notes.map { ($0.url, $0) }, uniquingKeysWith: { first, _ in first })
         var result: [ScratchpadNote] = []
         for url in urls where url.pathExtension.lowercased() == "md" {
             guard let values = try? url.resourceValues(forKeys: Set(keys)),
@@ -67,7 +71,14 @@ final class ScratchpadStore {
             let modifiedAt = values.contentModificationDate ?? Date()
             let createdAt = createdDate(from: url) ?? values.creationDate ?? modifiedAt
             let lastOpenedAt = lastOpenedDate(for: url) ?? modifiedAt
-            let (title, preview) = titleAndPreview(for: url)
+            let title: String
+            let preview: String
+            if let cached = previous[url], cached.modifiedAt == modifiedAt {
+                title = cached.title
+                preview = cached.preview
+            } else {
+                (title, preview) = titleAndPreview(for: url)
+            }
             result.append(ScratchpadNote(
                 url: url,
                 createdAt: createdAt,

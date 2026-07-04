@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import ObjectiveC.runtime
 import HypergraphiaCore
 
 /// Which content the left sidebar shows. Backed by `@AppStorage` so every
@@ -162,12 +163,24 @@ private struct FolderListView: View {
 
     private func delete(_ file: FolderFile) {
         let document = openDocument(for: file.url)
+        let documentWindow = document?.windowControllers.compactMap(\.window).first
         let nextWindow = isCurrent(file) ? windowToSelectAfterDeleting(document: document) : nil
+        let isOnlyTab = documentWindow.map { ($0.tabbedWindows ?? [$0]).count <= 1 } ?? false
 
         do {
             try FileManager.default.trashItem(at: file.url, resultingItemURL: nil)
             folderState.refresh()
-            close(document, selecting: nextWindow)
+            if let documentWindow, isOnlyTab {
+                // Deleting the document shown in the window's only tab must
+                // not take the window down with it — with "keep running in
+                // menu bar" off, closing the last window quits the whole
+                // app. Swap in a fresh untitled tab first, exactly like
+                // closing the last tab; the replacement flow closes the old
+                // tab once the new one is in the group.
+                replaceOnlyTabWithUntitled(in: documentWindow)
+            } else {
+                close(document, selecting: nextWindow)
+            }
         } catch {
             NSAlert(error: error).runModal()
         }
@@ -383,6 +396,55 @@ private struct ClickOutsideMonitor: NSViewRepresentable {
     }
 }
 
+// MARK: - Titlebar click-through (liquid-glass chrome)
+
+private var titlebarPassThroughKey: UInt8 = 0
+
+extension NSWindow {
+    /// Marks windows whose hidden, transparent titlebar must not intercept
+    /// clicks. Under the liquid-glass chrome, the tab capsules, sidebar
+    /// toggle, and new-tab button are SwiftUI content drawn in the titlebar
+    /// band; without pass-through, `NSTitlebarView` wins every hit-test in
+    /// that strip and the entire top chrome is mouse-dead (actions still
+    /// fire via accessibility, which bypasses NSView hit-testing — that's
+    /// why AXPress worked while clicks didn't).
+    var hypergraphiaTitlebarClicksPassThrough: Bool {
+        get { (objc_getAssociatedObject(self, &titlebarPassThroughKey) as? Bool) ?? false }
+        set { objc_setAssociatedObject(self, &titlebarPassThroughKey, newValue, .OBJC_ASSOCIATION_RETAIN_NONATOMIC) }
+    }
+}
+
+/// Wraps `NSTitlebarView.hitTest(_:)` so that on flagged windows a hit that
+/// resolves to the *bare titlebar view* (the empty transparent strip)
+/// returns nil and falls through to the content beneath. Hits on real
+/// titlebar subviews — traffic lights, accessories — are untouched, and
+/// unflagged windows (scratchpad panels, legacy chrome) keep stock behavior.
+@MainActor
+enum TitlebarClickThroughInstaller {
+    private static var didInstall = false
+
+    static func install() {
+        guard !didInstall,
+              let titlebarClass = NSClassFromString("NSTitlebarView"),
+              let method = class_getInstanceMethod(titlebarClass, #selector(NSView.hitTest(_:)))
+        else { return }
+        didInstall = true
+
+        typealias HitTestFunc = @convention(c) (NSView, Selector, NSPoint) -> NSView?
+        let selector = #selector(NSView.hitTest(_:))
+        let original = unsafeBitCast(method_getImplementation(method), to: HitTestFunc.self)
+
+        let replacement: @convention(block) (NSView, NSPoint) -> NSView? = { view, point in
+            let result = original(view, selector, point)
+            if result === view, view.window?.hypergraphiaTitlebarClicksPassThrough == true {
+                return nil
+            }
+            return result
+        }
+        method_setImplementation(method, imp_implementationWithBlock(replacement))
+    }
+}
+
 // MARK: - Folder chooser + open-with-folder-context helpers
 
 enum FolderPanel {
@@ -439,12 +501,23 @@ func configureDocumentWindowChrome(_ window: NSWindow?) {
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.styleMask.insert(.fullSizeContentView)
+        // AppKit still draws its hairline at the (hidden) titlebar's bottom
+        // edge — a full-width line cutting across the glass sidebar and the
+        // editor. The chrome supplies its own separators.
+        window.titlebarSeparatorStyle = .none
+        // The interactive chrome (tab capsules, sidebar toggle, new-tab
+        // button) draws in the titlebar band — clicks must fall through
+        // the empty transparent titlebar to reach it.
+        window.hypergraphiaTitlebarClicksPassThrough = true
         TrafficLightMover.shared.manage(window)
+        NativeTabBarSuppressor.manage(window)
         hideNativeTabBar(in: window)
     } else {
         window.titleVisibility = .visible
         window.titlebarAppearsTransparent = false
         window.styleMask.remove(.fullSizeContentView)
+        window.titlebarSeparatorStyle = .automatic
+        window.hypergraphiaTitlebarClicksPassThrough = false
     }
     configureNativeTabAddButton(in: window)
 
@@ -473,6 +546,43 @@ func hideNativeTabBar(in window: NSWindow?) {
     hideTabBarChrome(in: window)
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak window] in
         guard let window else { return }
+        hideTabBarChrome(in: window)
+    }
+}
+
+/// AppKit re-adds (or re-shows) the native tab bar accessory on its own
+/// schedule — tab churn, titlebar rebuilds — and until one of our re-hide
+/// hooks fired, it drew as an intermittent dark band across the window top.
+/// This watches every window-update pass with an O(accessories) fast path
+/// (typically zero visible accessories → a couple of nanoseconds) and
+/// re-hides the bar the moment it resurfaces, inside the same update turn.
+@MainActor
+enum NativeTabBarSuppressor {
+    private static var managed = Set<ObjectIdentifier>()
+
+    static func manage(_ window: NSWindow) {
+        let key = ObjectIdentifier(window)
+        guard !managed.contains(key) else { return }
+        managed.insert(key)
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.didUpdateNotification, object: window, queue: nil
+        ) { note in
+            guard let window = note.object as? NSWindow else { return }
+            MainActor.assumeIsolated {
+                hideTabBarChromeIfResurfaced(in: window)
+            }
+        }
+    }
+}
+
+@MainActor
+private func hideTabBarChromeIfResurfaced(in window: NSWindow) {
+    // Fast path: only pay for the subview walk when a visible accessory
+    // exists at all — the steady state is "every accessory hidden".
+    let hasVisibleTabBar = window.titlebarAccessoryViewControllers.contains {
+        !$0.isHidden && containsTabBar($0.view)
+    }
+    if hasVisibleTabBar {
         hideTabBarChrome(in: window)
     }
 }

@@ -293,10 +293,12 @@ struct ContentView: View {
             }
         }
         .overlay(alignment: .topTrailing) {
-            if #available(macOS 26.0, *), tabsShowing {
-                // Always visible and always in the same place — pinned at
-                // the trailing edge whether tabs are showing, hidden for
-                // editing, or absent entirely.
+            if #available(macOS 26.0, *), tabsShowing, canOpenNewTab {
+                // Pinned at the trailing edge, but only once this tab is
+                // worth keeping: a pristine untitled buffer would be
+                // discarded by the very tab the button creates (see
+                // openMarkdownDocument's pristine-source handoff), so
+                // offering + there just swaps one empty editor for another.
                 newTabButton
                     .padding(.top, 12)
                     .padding(.trailing, 22)
@@ -320,6 +322,17 @@ struct ContentView: View {
         return false
     }
 
+    /// The new-tab + appears once the current tab has content AND is backed
+    /// by a named file on disk — or when the tab bar is already up (more
+    /// than one tab), where hiding the + mid-row would just be confusing.
+    /// All checks are O(1) — this runs on every body evaluation. (The first
+    /// keystroke auto-creates the file, so `fileURL` follows content within
+    /// a beat; until then a lone tab is a pristine buffer the new tab would
+    /// replace anyway.)
+    private var canOpenNewTab: Bool {
+        (fileURL != nil && !document.text.isEmpty) || tabModel.tabs.count > 1
+    }
+
     /// Whether the tab strip is currently shown (its band collapses to zero
     /// height otherwise, extending the content to the window's top border).
     private var stripRevealed: Bool {
@@ -332,16 +345,22 @@ struct ContentView: View {
         reduceMotion ? nil : .spring(response: 0.25, dampingFraction: 0.9)
     }
 
-    /// Constant top inset baked into the content under the glass chrome:
-    /// the tab strip overlays this region, so peeking in/out never moves
-    /// the document, while mid-scroll text still reaches the window's top
-    /// border (insets only pad the document's start). Availability-based
-    /// rather than tab-count-based so the preview's HTML template (which
-    /// bakes it in at load) never goes stale.
+    /// Top inset baked into the content under the glass chrome. With the
+    /// tab strip actually occupying the band (more than one tab) it spans
+    /// the full 48pt strip + 8pt breathing room; a lone tab draws no
+    /// capsules, so reserving the whole band just pushed the first block
+    /// down for nothing — titlebar-height clearance is enough. Constant
+    /// while the tab count doesn't change, so the strip's editing-time
+    /// peek in/out never reflows the document. The preview applies inset
+    /// changes via JS (no reload), and the editor recomputes its container
+    /// inset every update pass.
     private var contentTopInset: CGFloat {
         if #available(macOS 26.0, *) {
-            // 48pt strip band + 8pt breathing room below its divider,
-            // matching the sidebar's gap between its rule and folder row.
+            // Constant on purpose: 48pt chrome strip + 8pt breathing room
+            // puts the first block's top exactly level with the sidebar's
+            // folder row (whose separator sits at 48pt with the same 8pt
+            // gap). No tab-count or editing-state dependence — the first
+            // block must never drift vertically.
             return 56
         }
         return 0

@@ -145,17 +145,15 @@ final class HypergraphiaTextView: PersistentTextCheckingTextView {
         }
 
         // TIFF is macOS's generic image container — Cmd+Shift+Ctrl+4
-        // screenshots land here. Decode + re-encode to PNG so we don't
-        // drop a multi-MB uncompressed sibling next to the document.
-        if let tiff = pasteboard.data(forType: .tiff),
-           let png = Self.pngData(from: tiff) {
-            return insertPastedImage(png, ext: "png")
+        // screenshots land here. Decode + re-encode to PNG (off-main) so we
+        // don't drop a multi-MB uncompressed sibling next to the document.
+        if let tiff = pasteboard.data(forType: .tiff) {
+            return insertPastedImageReencodingToPNG { Self.pngData(from: tiff) }
         }
 
         if pasteboard.canReadObject(forClasses: [NSImage.self], options: nil),
-           let image = NSImage(pasteboard: pasteboard),
-           let png = Self.pngData(from: image) {
-            return insertPastedImage(png, ext: "png")
+           let image = NSImage(pasteboard: pasteboard) {
+            return insertPastedImageReencodingToPNG { Self.pngData(from: image) }
         }
 
         if let text = pasteboard.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -169,45 +167,86 @@ final class HypergraphiaTextView: PersistentTextCheckingTextView {
 
     // MARK: - Image-paste helpers
 
-    @discardableResult
-    private func handleImageFileURLs(_ urls: [URL]) -> Bool {
-        guard let docURL = resolveDocumentURLForPaste() else {
-            DiagnosticLog.log("handleImageFileURLs: no document URL, aborting")
-            return false
-        }
-        var tokens: [String] = []
-        for url in urls {
-            let accessed = url.startAccessingSecurityScopedResource()
-            defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+    /// Serial queue for pasted-image encoding and writes. Serial on purpose:
+    /// `ImagePasteService` allocates collision-free filenames by scanning
+    /// siblings, so two concurrent pastes must not race the counter.
+    private static let imageWriteQueue = DispatchQueue(
+        label: "com.sabotage.clearly.image-paste", qos: .userInitiated
+    )
 
-            do {
-                let data = try Data(contentsOf: url)
-                let ext = url.pathExtension.lowercased()
-                let result = try ImagePasteService.writeImageData(
-                    data,
-                    ext: ext,
-                    besidesDocumentAt: docURL
-                )
-                tokens.append(result.markdown)
-            } catch {
-                DiagnosticLog.log("handleImageFileURLs: \(url.lastPathComponent) error: \(error.localizedDescription)")
+    /// Insert a placeholder at the caret immediately, produce the final
+    /// markdown off the main thread, then swap it in — same flow the URL
+    /// download path uses. Re-encoding a Retina screenshot to PNG plus the
+    /// atomic write used to happen synchronously and froze typing for the
+    /// duration.
+    @discardableResult
+    private func performAsyncImageInsert(_ work: @escaping (URL) -> String?) -> Bool {
+        guard let docURL = resolveDocumentURLForPaste() else { return false }
+        let token = UUID().uuidString
+        let placeholder = "![](saving…)<!--clearly-paste:\(token)-->"
+        insertText(placeholder, replacementRange: selectedRange())
+        Self.imageWriteQueue.async { [weak self] in
+            let markdown = work(docURL) ?? "![](failed-paste)"
+            DispatchQueue.main.async { [weak self] in
+                self?.replacePlaceholder(placeholder, with: markdown)
             }
         }
-        guard !tokens.isEmpty else { return false }
-        insertText(tokens.joined(separator: "\n"), replacementRange: selectedRange())
         return true
     }
 
     @discardableResult
-    private func insertPastedImage(_ data: Data, ext: String) -> Bool {
-        guard let docURL = resolveDocumentURLForPaste() else { return false }
-        do {
-            let result = try ImagePasteService.writeImageData(data, ext: ext, besidesDocumentAt: docURL)
-            insertText(result.markdown, replacementRange: selectedRange())
-            return true
-        } catch {
-            DiagnosticLog.log("Paste: failed to write sibling image (\(ext)): \(error.localizedDescription)")
+    private func handleImageFileURLs(_ urls: [URL]) -> Bool {
+        // Cheap main-thread readability gate so unreadable items still fall
+        // through to the other pasteboard representations, like the old
+        // synchronous path did.
+        let readable = urls.filter { FileManager.default.isReadableFile(atPath: $0.path) }
+        guard !readable.isEmpty else {
+            DiagnosticLog.log("handleImageFileURLs: no readable image URLs, falling through")
             return false
+        }
+        return performAsyncImageInsert { docURL in
+            var tokens: [String] = []
+            for url in readable {
+                let accessed = url.startAccessingSecurityScopedResource()
+                defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+                do {
+                    let data = try Data(contentsOf: url)
+                    let result = try ImagePasteService.writeImageData(
+                        data,
+                        ext: url.pathExtension.lowercased(),
+                        besidesDocumentAt: docURL
+                    )
+                    tokens.append(result.markdown)
+                } catch {
+                    DiagnosticLog.log("handleImageFileURLs: \(url.lastPathComponent) error: \(error.localizedDescription)")
+                }
+            }
+            return tokens.isEmpty ? nil : tokens.joined(separator: "\n")
+        }
+    }
+
+    @discardableResult
+    private func insertPastedImage(_ data: Data, ext: String) -> Bool {
+        performAsyncImageInsert { docURL in
+            guard let result = try? ImagePasteService.writeImageData(data, ext: ext, besidesDocumentAt: docURL) else {
+                DiagnosticLog.log("Paste: failed to write sibling image (\(ext))")
+                return nil
+            }
+            return result.markdown
+        }
+    }
+
+    /// Decode + re-encode to PNG off-main, then write. Used for TIFF
+    /// screenshots and generic NSImage pasteboard content.
+    @discardableResult
+    private func insertPastedImageReencodingToPNG(from encode: @escaping () -> Data?) -> Bool {
+        performAsyncImageInsert { docURL in
+            guard let png = encode(),
+                  let result = try? ImagePasteService.writePNG(png, besidesDocumentAt: docURL) else {
+                DiagnosticLog.log("Paste: failed to re-encode pasted image to PNG")
+                return nil
+            }
+            return result.markdown
         }
     }
 

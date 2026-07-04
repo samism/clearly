@@ -165,39 +165,40 @@ private struct TabItem: View {
                 .foregroundStyle(tab.isSelected ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
                 .lineLimit(1)
                 .truncationMode(.middle)
-                .padding(.horizontal, 24)
+                .padding(.horizontal, 28)
 
             HStack {
-                if isHovered {
-                    Button(action: close) {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 8, weight: .bold))
-                            .foregroundStyle(.secondary)
-                            .frame(width: 16, height: 16)
-                            .background(
-                                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                    .fill(Theme.hoverColor(inDark: colorScheme == .dark))
-                            )
-                    }
-                    .buttonStyle(.plain)
-                    .help("Close tab")
-                    .accessibilityLabel("Close \(tab.title)")
+                if showsClose {
+                    // Deliberately NOT a Button: the capsule underneath
+                    // carries its own select `.onTapGesture`, and on macOS a
+                    // nested Button loses that arbitration — the ✕ was
+                    // nearly unclickable. A child tap gesture wins over the
+                    // parent's (deepest view first), and the hit target is a
+                    // full-height leading zone, not just the 16pt glyph box.
+                    Image(systemName: "xmark")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 16, height: 16)
+                        .background(
+                            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                .fill(Theme.hoverColor(inDark: colorScheme == .dark))
+                        )
+                        .frame(width: 28, height: 24)
+                        .contentShape(Rectangle())
+                        .onTapGesture(perform: close)
+                        .help("Close tab")
+                        .accessibilityLabel("Close \(tab.title)")
+                        .accessibilityAddTraits(.isButton)
                 }
                 Spacer(minLength: 0)
             }
-            .padding(.leading, 5)
         }
         .frame(maxWidth: .infinity)
         .frame(height: 24)
-        // The selected tab carries the accent as a glass tint (the same
-        // treatment as the bottom toolbar's active outline toggle);
-        // unselected tabs are plain interactive glass.
-        .glassEffect(
-            tab.isSelected
-                ? .regular.tint(Theme.accentColorSwiftUI.opacity(0.2)).interactive()
-                : .regular.interactive(),
-            in: .capsule
-        )
+        // Select/hover live INSIDE the glass boundary, in the same event
+        // world as the ✕ above. Attached outside `.glassEffect`, they sat
+        // behind the effect's AppKit-backed view and only fired reliably in
+        // the sliver the glass didn't claim — tabs felt unclickable.
         .contentShape(Capsule(style: .continuous))
         .onTapGesture(perform: select)
         .onHover { hovering in
@@ -208,8 +209,24 @@ private struct TabItem: View {
                 isHovered = hovering
             }
         }
+        // The selected tab carries the accent as a glass tint (the same
+        // treatment as the bottom toolbar's active outline toggle);
+        // unselected tabs are plain interactive glass.
+        .glassEffect(
+            tab.isSelected
+                ? .regular.tint(Theme.accentColorSwiftUI.opacity(0.2)).interactive()
+                : .regular.interactive(),
+            in: .capsule
+        )
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(tab.title) tab")
         .accessibilityAddTraits(tab.isSelected ? .isSelected : [])
+    }
+
+    /// The ✕ is always present on the selected tab (Safari-style) and
+    /// hover-revealed on the others — closing must not depend on catching
+    /// a hover animation first.
+    private var showsClose: Bool {
+        tab.isSelected || isHovered
     }
 }

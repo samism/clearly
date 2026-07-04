@@ -51,7 +51,7 @@ class PreviewViewController: NSViewController, QLPreviewingController {
             <body>\(htmlBody)</body>
             \(MathSupport.scriptHTML(for: htmlBody))
             \(TableSupport.scriptHTML(for: htmlBody))
-            \(MermaidSupport.scriptHTML)
+            \(MermaidSupport.scriptHTML(for: htmlBody))
             \(SyntaxHighlightSupport.scriptHTML(for: htmlBody))
             </html>
             """
