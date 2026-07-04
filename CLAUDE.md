@@ -104,6 +104,18 @@ Folders inside `Sources/HypergraphiaCore/`:
 
 **SwiftUI `.keyboardShortcut(letter, modifiers: [.command, .option])` does not dispatch on this macOS** even though the menu item displays the shortcut. `.command` alone and `[.command, .shift]` work fine; the option modifier on a letter silently fails. For ⌥⌘-letter shortcuts, build an `NSMenuItem` with `keyEquivalent: "x"` + `keyEquivalentModifierMask = [.command, .option]` and inject it via the `applicationWillUpdate` AppKit-menu pattern in `HypergraphiaAppDelegate`.
 
+### Performance invariants (keystroke / preview / QL paths)
+
+These were established by profiling and must not regress:
+
+- **No full-document work on the keystroke path.** `textStorage.string` bridging is an O(n) NSMutableString copy — the highlighter's incremental pass matches against the edited paragraph's substring only; selection handlers use `textStorage.mutableString.substring(with:)`; `updateNSView` mismatch checks compare `lastCommittedText` + storage length before ever bridging. `MarkdownStats` full-document counts go through `StatusBarState`'s 20K-char sync/async threshold.
+- **Never construct fonts or compile regexes per call.** `Theme` editor fonts are cached per size; every post-processing regex in `MarkdownRenderer` / `MarkdownStats` / `OutlineState` is a compiled static. New regex-based features must follow.
+- **`PreviewView.buildHTML` runs on a background queue** (generation-token guarded). It must stay pure string/Bundle work — no AppKit, no `Theme`, no view state. New `*Support.scriptHTML` helpers must keep that contract.
+- **`WKURLSchemeTask` async replies must be stop-guarded.** `LocalImageSchemeHandler` reads files off-main; touching a task after WebKit's `stop` raises, so replies re-check `liveTasks` membership on main first.
+- **`Limits.maxOpenableFileSize` is enforced in `MarkdownDocument.init`** (throws `.fileReadTooLarge`); the highlighter/stats/preview assume oversized files never reach them. QuickLook truncates at `Limits.maxQuickLookRenderSize` via `TextFileDecoder.truncatedAtLineBoundary`.
+- **File decode goes through `TextFileDecoder`** (document open, external-change watcher, QL) — strict UTF-8, BOM-guided UTF-16/32, legacy sniffing, lossy floor. Saves always write UTF-8.
+- **`swift test` cannot compile asset catalogs** — the SPM test host gets raw colorset JSON, so `clearlyAsset` falls back to parsing it. Tests may touch `Theme` colors freely; app builds still trap on genuinely missing assets.
+
 ## QuickLook + LaunchServices (macOS 15/26 gotchas)
 
 The `.md` QuickLook preview, Finder column-view preview, and "default app for `.md`" all share LaunchServices routing and break in non-obvious ways. A working configuration requires THREE Info.plist invariants together — any one missing silently degrades to raw-text preview or wrong default opener.
