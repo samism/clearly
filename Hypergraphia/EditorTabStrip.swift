@@ -105,38 +105,40 @@ final class EditorTabModel: ObservableObject {
     }
 }
 
+@available(macOS 26.0, *)
 struct EditorTabStrip: View {
     @ObservedObject var model: EditorTabModel
     /// Extra leading space so tabs clear the floating traffic lights and
     /// sidebar toggle when the sidebar is hidden and the strip starts at
     /// the window's left edge.
     var leadingInset: CGFloat = 0
-    let onNewTab: () -> Void
 
     var body: some View {
-        HStack(spacing: 4) {
-            ForEach(model.tabs) { tab in
-                TabItem(tab: tab) {
-                    model.select(tab)
-                } close: {
-                    model.close(tab)
+        // Tabs float as Liquid Glass capsules over the content — no opaque
+        // band, so mid-scroll text passes visibly beneath them, Safari-
+        // style. The container keeps the capsules in one glass family. A
+        // lone tab shows no capsule at all — nothing to switch between —
+        // leaving the band as a bare window-drag handle. (The + button is
+        // not part of the strip: it lives in its own always-visible
+        // overlay, pinned at the window's trailing edge.)
+        GlassEffectContainer {
+            HStack(spacing: 8) {
+                if model.tabs.count > 1 {
+                    ForEach(model.tabs) { tab in
+                        TabItem(tab: tab) {
+                            model.select(tab)
+                        } close: {
+                            model.close(tab)
+                        }
+                    }
                 }
             }
-
-            Button(action: onNewTab) {
-                Image(systemName: "plus")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 24, height: 22)
-                    .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-            }
-            .buttonStyle(.plain)
-            .pointerStyle(.link)
-            .help("New file in tab")
-            .accessibilityLabel("New file in tab")
+            .frame(maxWidth: .infinity, minHeight: 24, alignment: .leading)
         }
         .padding(.leading, 8 + leadingInset)
-        .padding(.trailing, 8)
+        // Trailing room keeps stretched tabs clear of the + button pinned
+        // at the trailing edge (and of the scroller / rounded corner).
+        .padding(.trailing, 54)
         .padding(.vertical, 5)
         // The strip sits in the old titlebar band, so its empty areas act
         // as the window-drag handle.
@@ -148,6 +150,7 @@ struct EditorTabStrip: View {
     }
 }
 
+@available(macOS 26.0, *)
 private struct TabItem: View {
     let tab: EditorTabModel.Tab
     let select: () -> Void
@@ -186,16 +189,21 @@ private struct TabItem: View {
         }
         .frame(maxWidth: .infinity)
         .frame(height: 24)
-        .background(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(tab.isSelected
-                    ? Theme.hoverColor(inDark: colorScheme == .dark)
-                    : Color.clear)
+        // The selected tab carries the accent as a glass tint (the same
+        // treatment as the bottom toolbar's active outline toggle);
+        // unselected tabs are plain interactive glass.
+        .glassEffect(
+            tab.isSelected
+                ? .regular.tint(Theme.accentColorSwiftUI.opacity(0.2)).interactive()
+                : .regular.interactive(),
+            in: .capsule
         )
-        .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .contentShape(Capsule(style: .continuous))
         .onTapGesture(perform: select)
-        .pointerStyle(.link)
         .onHover { hovering in
+            // Explicit cursor control (covers the ✕ too — it sits inside
+            // the capsule): pointer styles lose to the web view beneath.
+            (hovering ? NSCursor.pointingHand : NSCursor.arrow).set()
             withAnimation(Theme.Motion.hover) {
                 isHovered = hovering
             }

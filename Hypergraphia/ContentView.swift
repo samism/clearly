@@ -221,22 +221,18 @@ struct ContentView: View {
                 if #available(macOS 26.0, *), tabsShowing, stripRevealed {
                     // The tab strip floats over the content (which carries a
                     // constant matching top inset), so peeking in and out
-                    // never reflows the document. Tabs sit in the traffic-
-                    // light band, Safari-style; with the sidebar hidden the
-                    // leading inset clears the floating lights and toggle.
+                    // never reflows the document. Tabs are free-floating
+                    // glass capsules in the traffic-light band, Safari-
+                    // style — no opaque band, so mid-scroll text passes
+                    // beneath them; with the sidebar hidden the leading
+                    // inset clears the floating lights and toggle.
                     EditorTabStrip(
                         model: tabModel,
                         leadingInset: outlineState.isVisible ? 0 : 122
-                    ) {
-                        newFile(tabbingInto: tabModel.window)
-                    }
+                    )
                     .padding(.top, 7)
                     .padding(.bottom, 6)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Theme.backgroundColorSwiftUI)
-                    .overlay(alignment: .bottom) {
-                        Divider()
-                    }
                     .transition(.move(edge: .top).combined(with: .opacity))
                 }
             }
@@ -270,7 +266,18 @@ struct ContentView: View {
                 // the tab strip's leading inset.
                 sidebarToggle
                     .padding(.leading, outlineState.isVisible ? 208 : 90)
-                    .padding(.top, 13)
+                    .padding(.top, 11)
+                    .ignoresSafeArea(.container, edges: .top)
+            }
+        }
+        .overlay(alignment: .topTrailing) {
+            if #available(macOS 26.0, *), tabsShowing {
+                // Always visible and always in the same place — pinned at
+                // the trailing edge whether tabs are showing, hidden for
+                // editing, or absent entirely.
+                newTabButton
+                    .padding(.top, 12)
+                    .padding(.trailing, 22)
                     .ignoresSafeArea(.container, edges: .top)
             }
         }
@@ -322,20 +329,50 @@ struct ContentView: View {
     /// inside the glass sidebar when it's open, floating over the editor
     /// strip when it's closed.
     @available(macOS 26.0, *)
-    private var sidebarToggle: some View {
+    @available(macOS 26.0, *)
+    private var newTabButton: some View {
         Button {
+            newFile(tabbingInto: tabModel.window)
+        } label: {
+            Image(systemName: "plus")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(width: 24, height: 24)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .glassEffect(.regular.interactive(), in: .circle)
+        // Explicit cursor control: SwiftUI's pointer styles lose to the
+        // WKWebView underneath, which re-asserts its own cursor on every
+        // tracked mouse move and flickers the pointer.
+        .onHover { hovering in
+            (hovering ? NSCursor.pointingHand : NSCursor.arrow).set()
+        }
+        .help("New file in tab")
+        .accessibilityLabel("New file in tab")
+    }
+
+    @ViewBuilder
+    private var sidebarToggle: some View {
+        let button = Button {
             outlineState.isVisible.toggle()
         } label: {
             Image(systemName: "sidebar.left")
                 .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(.secondary)
-                .frame(width: 28, height: 24)
-                .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .frame(width: 28, height: 28)
+                .contentShape(Circle())
         }
         .buttonStyle(.plain)
         .pointerStyle(.link)
         .help(outlineState.isVisible ? "Hide sidebar" : "Show sidebar")
         .accessibilityLabel(outlineState.isVisible ? "Hide sidebar" : "Show sidebar")
+
+        if #available(macOS 26.0, *) {
+            button.glassEffect(.regular.interactive(), in: .circle)
+        } else {
+            button
+        }
     }
 
     private var bottomToolbarOverlay: some View {
