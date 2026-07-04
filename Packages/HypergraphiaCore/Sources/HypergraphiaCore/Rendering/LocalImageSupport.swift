@@ -66,6 +66,66 @@ public enum LocalImageSupport {
     }
 }
 
+/// Byte cache for local preview images, keyed by path and validated by
+/// modification date. Live mode reloads the whole page on every block
+/// commit, re-requesting every image — without this, editing an image-heavy
+/// note re-reads megabytes from disk per commit. Thread-safe (the scheme
+/// handler reads on a concurrent queue).
+final class LocalImageCache {
+    static let shared = LocalImageCache()
+
+    private struct Entry {
+        let data: Data
+        let mtime: Date
+        var lastAccess: UInt64
+    }
+
+    private let lock = NSLock()
+    private var entries: [String: Entry] = [:]
+    private var totalBytes = 0
+    private var tick: UInt64 = 0
+    private let maxBytes: Int
+    /// One image never gets to monopolize the cache.
+    private var maxEntryBytes: Int { maxBytes / 4 }
+
+    init(maxBytes: Int = 64_000_000) {
+        self.maxBytes = maxBytes
+    }
+
+    func data(forPath path: String, mtime: Date) -> Data? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let entry = entries[path], entry.mtime == mtime else { return nil }
+        tick &+= 1
+        entries[path]?.lastAccess = tick
+        return entry.data
+    }
+
+    func store(_ data: Data, forPath path: String, mtime: Date) {
+        guard data.count <= maxEntryBytes else { return }
+        lock.lock()
+        defer { lock.unlock() }
+        if let old = entries[path] {
+            totalBytes -= old.data.count
+        }
+        tick &+= 1
+        entries[path] = Entry(data: data, mtime: mtime, lastAccess: tick)
+        totalBytes += data.count
+        // LRU eviction; the linear min-scan is fine at tens of entries.
+        while totalBytes > maxBytes,
+              let oldest = entries.min(by: { $0.value.lastAccess < $1.value.lastAccess }) {
+            totalBytes -= oldest.value.data.count
+            entries.removeValue(forKey: oldest.key)
+        }
+    }
+
+    var currentBytes: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return totalBytes
+    }
+}
+
 public final class LocalImageSchemeHandler: NSObject, WKURLSchemeHandler {
     private static let mimeTypes: [String: String] = [
         "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",
@@ -110,7 +170,19 @@ public final class LocalImageSchemeHandler: NSObject, WKURLSchemeHandler {
         let fileURL = URL(fileURLWithPath: path)
         Self.ioQueue.async { [weak self] in
             let withinLimit = Limits.isFileSize(fileURL, atMost: Limits.maxLocalImageSize)
-            let data: Data? = withinLimit ? (try? Data(contentsOf: fileURL)) : nil
+            let mtime = (try? fileURL.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+
+            var data: Data?
+            if withinLimit {
+                if let mtime, let cached = LocalImageCache.shared.data(forPath: path, mtime: mtime) {
+                    data = cached
+                } else {
+                    data = try? Data(contentsOf: fileURL)
+                    if let data, let mtime {
+                        LocalImageCache.shared.store(data, forPath: path, mtime: mtime)
+                    }
+                }
+            }
 
             DispatchQueue.main.async {
                 guard let self, self.liveTasks.remove(taskID) != nil else { return }

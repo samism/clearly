@@ -6,6 +6,13 @@ public enum MarkdownRenderer {
     private static let escapedMathDollarToken = "\u{E101}"
     private static let escapedMathPaddingToken = "\u{E102}"
 
+    /// cmark-gfm is not safe to call concurrently — it trips an internal
+    /// assertion (`blocks.c` finalize) under parallel use. That is reachable
+    /// in-app when a background preview render overlaps a PDF export's
+    /// main-thread render, and from Swift Testing's parallel runner. Only
+    /// the C calls serialize; post-processing runs unlocked.
+    private static let cmarkLock = NSLock()
+
     // MARK: - Compiled patterns
 
     // The renderer runs on every preview reload (and in QuickLook / PDF
@@ -72,14 +79,18 @@ public enum MarkdownRenderer {
         let options = Int32(CMARK_OPT_UNSAFE | CMARK_OPT_FOOTNOTES | CMARK_OPT_STRIKETHROUGH_DOUBLE_TILDE | CMARK_OPT_SOURCEPOS | CMARK_OPT_TABLE_PREFER_STYLE_ATTRIBUTES | CMARK_OPT_HARDBREAKS)
         var html: String
         // Try GFM renderer first (tables, strikethrough, task lists, autolinks)
+        cmarkLock.lock()
         if let buf = cmark_gfm_markdown_to_html(protectedBody, len, options) {
+            cmarkLock.unlock()
             html = String(cString: buf)
             free(buf)
         } else if let buf = cmark_markdown_to_html(protectedBody, len, options) {
             // Fallback to basic CommonMark
+            cmarkLock.unlock()
             html = String(cString: buf)
             free(buf)
         } else {
+            cmarkLock.unlock()
             return ""
         }
         html = processMath(html)

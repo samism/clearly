@@ -427,8 +427,13 @@ public enum PreviewCSS {
             position: relative;
         }
 
+        /* !important on purpose: the live-mode block editor copies computed
+           margins onto its wrap as INLINE styles, which outrank a plain
+           rule. Without this, whichever element leads the document (rendered
+           block, block editor, append editor) starts at a different height
+           and the first block visibly drifts between states. */
         body > *:first-child {
-            margin-top: 0;
+            margin-top: 0 !important;
         }
 
         /* Frontmatter metadata */

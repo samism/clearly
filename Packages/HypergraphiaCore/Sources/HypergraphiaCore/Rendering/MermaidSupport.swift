@@ -7,8 +7,20 @@ public enum MermaidSupport {
         Bundle.main.resourceURL
     }
 
+    /// Conditional variant following the `*Support` convention: empty when
+    /// the rendered content has no mermaid fences. The vendored
+    /// mermaid.min.js is multi-MB — parsing and initializing it on every
+    /// preview reload of a plain document was the single largest fixed cost
+    /// of a page load.
+    public static func scriptHTML(for htmlBody: String) -> String {
+        guard htmlBody.contains("language-mermaid") else { return "" }
+        return scriptHTML
+    }
+
     /// Mermaid <script> tag + initialization JS for preview HTML.
     /// Vendored mermaid.min.js v11 — see Shared/Resources/mermaid.min.js
+    /// Prefer `scriptHTML(for:)`, which skips all of this when the content
+    /// has no diagrams.
     public static var scriptHTML: String {
         guard let mermaidURL = resourceURL(named: "mermaid.min.js") else {
             return ""
