@@ -993,7 +993,7 @@ public enum PreviewCSS {
 
         /* Live mode (editable preview) */
         body.live-mode:not(:has(.live-block, .live-editor))::before {
-            content: "Click to start writing";
+            content: "What's happening?";
             color: var(--c-caption);
         }
         body.live-mode .live-block {
