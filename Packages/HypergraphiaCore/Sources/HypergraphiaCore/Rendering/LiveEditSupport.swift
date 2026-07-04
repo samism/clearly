@@ -676,6 +676,14 @@ public enum LiveEditSupport {
                     // caret into the previous block.
                     e.preventDefault();
                     e.stopPropagation();
+                    // …unless it's the document's only block: with nowhere
+                    // for the caret to land, the empty editor stays focused
+                    // and keeps taking input. (An in-place list-item editor
+                    // leaves its own <li> in the DOM — don't count it.)
+                    var remaining = blockRanges().filter(function(r) {
+                        return r.el !== a.liHost;
+                    });
+                    if (!remaining.length) return;
                     if (a.isAppend) {
                         a.committed = true;
                         a.wrap.remove();
