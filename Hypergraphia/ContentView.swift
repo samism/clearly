@@ -120,8 +120,10 @@ struct ContentView: View {
                 autoCreateFileIfNeeded()
                 // The name matched the first line as it was before this
                 // change — keep it matching. (Never disarmed here: an
-                // emptied-then-retyped first line stays synced.)
-                if fileNameTracksFirstLine(in: oldText) {
+                // emptied-then-retyped first line stays synced.) Once armed,
+                // skip the re-check — it walks NSDocumentController's window
+                // lists, which isn't per-keystroke work.
+                if !fileNameSynced, fileNameTracksFirstLine(in: oldText) {
                     fileNameSynced = true
                 }
                 scheduleFirstLineRename()
@@ -782,20 +784,43 @@ private struct WindowTitleSetter: NSViewRepresentable {
     let newFile: (NSWindow?) -> Void
     let onWindow: (NSWindow) -> Void
 
+    /// Tracks what was last applied so the per-update async pass can bail
+    /// out. `updateNSView` runs on every keystroke (the document binding
+    /// changes), and the full pass scans NSDocumentController's document
+    /// list and reconfigures window chrome — work that only matters when
+    /// the window or the file URL actually changes.
+    final class Coordinator {
+        weak var appliedWindow: NSWindow?
+        var appliedURL: URL?
+        var didApply = false
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
     func makeNSView(context: Context) -> NSView {
         NSView()
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
+        let coordinator = context.coordinator
         DispatchQueue.main.async { [weak nsView] in
-            let title = displayTitle(for: fileURL)
-            if let window = nsView?.window {
-                window.title = title
+            let window = nsView?.window
+            if coordinator.didApply,
+               window === coordinator.appliedWindow,
+               coordinator.appliedURL?.standardizedFileURL == fileURL?.standardizedFileURL {
+                return
+            }
+
+            if let window {
+                window.title = displayTitle(for: fileURL)
                 configureDocumentWindowChrome(window)
                 window.hypergraphiaNewFileAction = { [weak window] in
                     newFile(window)
                 }
                 onWindow(window)
+                coordinator.appliedWindow = window
+                coordinator.appliedURL = fileURL
+                coordinator.didApply = true
             }
 
             guard let target = fileURL?.standardizedFileURL else { return }
@@ -806,7 +831,7 @@ private struct WindowTitleSetter: NSViewRepresentable {
         }
     }
 
-    static func dismantleNSView(_ nsView: NSView, coordinator: ()) {
+    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
         nsView.window?.hypergraphiaNewFileAction = nil
     }
 }

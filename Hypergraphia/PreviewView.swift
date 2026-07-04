@@ -57,7 +57,9 @@ struct PreviewView: NSViewRepresentable {
     /// Everything that determines the rendered HTML except the backing file
     /// URL (which only affects local-image resolution).
     private var renderKey: String {
-        "\(markdown.count)|\(markdown.hashValue)__\(fontSize)__\(fontFamily)__\(colorScheme == .dark ? "dark" : "light")__\(contentWidthEm.map { "\($0)" } ?? "off")__\(hideFrontmatterInPreview)"
+        // utf16.count, not count: grapheme counting walks the whole string,
+        // and this key is rebuilt on every SwiftUI pass while rendered.
+        "\(markdown.utf16.count)|\(markdown.hashValue)__\(fontSize)__\(fontFamily)__\(colorScheme == .dark ? "dark" : "light")__\(contentWidthEm.map { "\($0)" } ?? "off")__\(hideFrontmatterInPreview)"
     }
 
     private var contentKey: String {

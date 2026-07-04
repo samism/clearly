@@ -100,6 +100,7 @@ struct EditorView: NSViewRepresentable {
         let highlighter = MarkdownSyntaxHighlighter()
         context.coordinator.highlighter = highlighter
         textView.string = text
+        context.coordinator.lastCommittedText = text
         textView.delegate = context.coordinator
         scrollView.documentView = textView
 
@@ -299,30 +300,44 @@ struct EditorView: NSViewRepresentable {
         // the dead-key sequence. The mismatch resolves naturally on the next
         // textDidChange — either when composition commits (Option+u then o →
         // "ö" gets inserted normally) or when the user dismisses it.
-        let textMismatch = text.count != textView.string.count || textView.string != text
         if !context.coordinator.isUpdating
             && context.coordinator.pendingBindingUpdates == 0
-            && !textView.hasMarkedText()
-            && textMismatch {
-            DiagnosticLog.log("updateNSView #\(count): external text change (\(text.count) chars)")
-            context.coordinator.isUpdating = true
-            let selectedRanges = textView.selectedRanges
-            textView.string = text
-            textView.selectedRanges = selectedRanges
-            context.coordinator.isHighlightingInProgress = true
-            context.coordinator.highlighter?.highlightAll(textView.textStorage!, caller: "externalText")
-            context.coordinator.isHighlightingInProgress = false
-            // External text replacement (file load/revert) — old match ranges are stale.
-            context.coordinator.clearFindHighlights()
-            if let findState = context.coordinator.findState, findState.isVisible, findState.activeMode == .edit {
-                DispatchQueue.main.async { [weak findState] in
-                    guard let findState, findState.activeMode == .edit else { return }
-                    findState.matchCount = 0
-                    findState.currentIndex = 0
-                    findState.resultsAreStale = true
-                }
+            && !textView.hasMarkedText() {
+            // Mismatch detection is on the per-keystroke path, so it has to
+            // stay O(1) in the common no-change case. `text == lastCommitted`
+            // hits Swift's same-storage fast path when SwiftUI hands back the
+            // value the coordinator committed; the utf16/storage length gate
+            // catches divergence without bridging the text view's backing
+            // store (an O(n) NSMutableString copy) just to compare.
+            let storageLength = textView.textStorage?.length ?? 0
+            let textMismatch: Bool
+            if text == context.coordinator.lastCommittedText && text.utf16.count == storageLength {
+                textMismatch = false
+            } else {
+                textMismatch = text.utf16.count != storageLength || textView.string != text
             }
-            context.coordinator.isUpdating = false
+            if textMismatch {
+                DiagnosticLog.log("updateNSView #\(count): external text change (\(text.utf16.count) utf16 units)")
+                context.coordinator.isUpdating = true
+                let selectedRanges = textView.selectedRanges
+                textView.string = text
+                textView.selectedRanges = selectedRanges
+                context.coordinator.lastCommittedText = text
+                context.coordinator.isHighlightingInProgress = true
+                context.coordinator.highlighter?.highlightAll(textView.textStorage!, caller: "externalText")
+                context.coordinator.isHighlightingInProgress = false
+                // External text replacement (file load/revert) — old match ranges are stale.
+                context.coordinator.clearFindHighlights()
+                if let findState = context.coordinator.findState, findState.isVisible, findState.activeMode == .edit {
+                    DispatchQueue.main.async { [weak findState] in
+                        guard let findState, findState.activeMode == .edit else { return }
+                        findState.matchCount = 0
+                        findState.currentIndex = 0
+                        findState.resultsAreStale = true
+                    }
+                }
+                context.coordinator.isUpdating = false
+            }
         } else if context.coordinator.isUpdating && count <= 5 {
             DiagnosticLog.log("updateNSView #\(count): skipped text check (isUpdating)")
         }
@@ -359,6 +374,13 @@ struct EditorView: NSViewRepresentable {
         var pendingBindingUpdates = 0
         var pendingBindingUpdateToken: UUID?
         private var pendingFullHighlightWork: DispatchWorkItem?
+        /// Snapshot of the last text this coordinator pushed into (or pulled
+        /// from) the binding. Lets `updateNSView` skip the O(n) text-view
+        /// bridge + compare on every SwiftUI pass where nothing changed.
+        var lastCommittedText: String = ""
+        /// Whether the previous selection had non-zero length — used to skip
+        /// status-bar selection work entirely for plain caret movement.
+        var hadSelection = false
 
         // Find state tracking
         var matchRanges: [NSRange] = []
@@ -398,18 +420,35 @@ struct EditorView: NSViewRepresentable {
             textView.showFindIndicator(for: range)
         }
 
+        /// Selections beyond this many UTF-16 units aren't bridged for
+        /// mode-switch highlighting — the preview-side text search couldn't
+        /// use a query that size anyway, and copying it per selection event
+        /// makes shift-drags stutter on large documents.
+        private static let maxBridgedSelectionLength = 10_000
+
         func textViewDidChangeSelection(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
-            // Store current selection for highlight-on-mode-switch
+            // Store current selection for highlight-on-mode-switch.
+            // `textStorage.mutableString` is the live backing store — using it
+            // avoids the full-document snapshot that bridging `textView.string`
+            // performs on every selection event.
             let range = textView.selectedRange()
-            if range.length > 0 {
-                let text = (textView.string as NSString).substring(with: range)
+            if range.length > 0, range.length <= Self.maxBridgedSelectionLength,
+               let storage = textView.textStorage, range.upperBound <= storage.length {
+                let text = storage.mutableString.substring(with: range)
                 SelectionBridge.setSelection(text, for: parent.positionSyncID)
             } else {
                 SelectionBridge.setSelection(nil, for: parent.positionSyncID)
             }
 
-            parent.statusBarState?.updateSelection(range, in: textView.string)
+            // Status-bar selection counts only need refreshing when a real
+            // selection exists or one was just dismissed; plain caret movement
+            // (every keystroke fires this) skips the state churn entirely.
+            let hasSelection = range.length > 0
+            if hasSelection || hadSelection {
+                parent.statusBarState?.updateSelection(range, in: lastCommittedText)
+            }
+            hadSelection = hasSelection
         }
 
         @objc func handleHighlightText(_ notification: Notification) {
@@ -461,37 +500,44 @@ struct EditorView: NSViewRepresentable {
         }
 
         func jumpToLine(_ line: Int) {
-            guard let textView, line > 0 else { return }
-            let text = textView.string
-            let lines = (text as NSString).components(separatedBy: "\n")
-            let targetLine = min(line, lines.count)
-            var charOffset = 0
-            for i in 0..<(targetLine - 1) {
-                charOffset += (lines[i] as NSString).length + 1
+            guard let textView, let storage = textView.textStorage, line > 0 else { return }
+            let nsText = storage.mutableString
+            // Walk newline-by-newline to the target line's start; clamps to
+            // the last line when the document has fewer lines.
+            var location = 0
+            var currentLine = 1
+            while currentLine < line {
+                let next = nsText.range(of: "\n", range: NSRange(location: location, length: nsText.length - location))
+                if next.location == NSNotFound { break }
+                location = next.location + 1
+                currentLine += 1
             }
-            let nsText = text as NSString
-            let location = min(charOffset, nsText.length)
             let range = NSRange(location: location, length: 0)
             textView.setSelectedRange(range)
             textView.scrollRangeToVisible(range)
-            if targetLine - 1 < lines.count {
-                let lineLen = (lines[targetLine - 1] as NSString).length
-                let highlightRange = NSRange(location: location, length: min(lineLen, nsText.length - location))
-                textView.showFindIndicator(for: highlightRange)
-            }
+            let lineEnd = nsText.range(of: "\n", range: NSRange(location: location, length: nsText.length - location))
+            let end = lineEnd.location == NSNotFound ? nsText.length : lineEnd.location
+            textView.showFindIndicator(for: NSRange(location: location, length: end - location))
         }
 
         func currentLineInfo() -> (current: Int, total: Int) {
-            guard let textView else { return (1, 1) }
-            let text = textView.string as NSString
-            let location = min(textView.selectedRange().location, text.length)
-            var lineNumber = 1
-            var i = 0
-            while i < location {
-                if text.character(at: i) == 0x0A { lineNumber += 1 }
-                i += 1
+            guard let textView, let storage = textView.textStorage else { return (1, 1) }
+            let nsText = storage.mutableString
+            let location = min(textView.selectedRange().location, nsText.length)
+            func newlines(in range: NSRange) -> Int {
+                var count = 0
+                var cursor = range.location
+                let end = NSMaxRange(range)
+                while cursor < end {
+                    let next = nsText.range(of: "\n", range: NSRange(location: cursor, length: end - cursor))
+                    if next.location == NSNotFound { break }
+                    count += 1
+                    cursor = next.location + 1
+                }
+                return count
             }
-            let totalLines = text.components(separatedBy: "\n").count
+            let lineNumber = newlines(in: NSRange(location: 0, length: location)) + 1
+            let totalLines = lineNumber + newlines(in: NSRange(location: location, length: nsText.length - location))
             return (lineNumber, totalLines)
         }
 
@@ -562,8 +608,6 @@ struct EditorView: NSViewRepresentable {
                 DiagnosticLog.log("textDidChange skipped (isUpdating)")
                 return
             }
-
-            DiagnosticLog.log("textDidChange (\(textView.textStorage?.length ?? 0) chars)")
 
             // Block updateNSView from replacing text while binding update is pending.
             // Without this, SwiftUI can call updateNSView (e.g., from a layout pass
@@ -647,7 +691,9 @@ struct EditorView: NSViewRepresentable {
         }
 
         private func commitTextViewContents(_ textView: NSTextView) {
-            parent.text = textView.string
+            let snapshot = textView.string
+            lastCommittedText = snapshot
+            parent.text = snapshot
         }
 
         private var scrollSuppressCount = 0
