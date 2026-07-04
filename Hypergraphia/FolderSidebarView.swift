@@ -693,6 +693,12 @@ func openMarkdownDocument(at url: URL, from folder: URL?, tabbingInto sourceWind
     if let folder {
         FolderHandoff.stage(folder: folder, forOpening: url)
     }
+    // A pristine untitled editor (nothing typed — the first keystroke would
+    // have auto-created a file) gives way to the opened document: its tab
+    // is discarded once the new one is in, so the group stays at one tab
+    // and no tab bar appears.
+    let sourceDocument = sourceWindow?.windowController?.document as? NSDocument
+    let sourceIsPristineUntitled = sourceDocument != nil && sourceDocument?.fileURL == nil
     // Let AppKit create the new window directly inside the source window's
     // tab group. Tabbing it in from the completion means the window first
     // appears standalone at a cascade position and then jumps into the
@@ -726,6 +732,9 @@ func openMarkdownDocument(at url: URL, from folder: URL?, tabbingInto sourceWind
         configureDocumentWindowChrome(sourceWindow)
         configureDocumentWindowChrome(targetWindow)
         targetWindow.makeKeyAndOrderFront(nil)
+        if sourceIsPristineUntitled {
+            sourceWindow.performClose(nil)
+        }
     }
 }
 
